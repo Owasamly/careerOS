@@ -7,6 +7,7 @@ from pathlib import Path
 
 from .extractor import extract_vacancy
 from .models import ExtractRequest, VacancyDocument
+from .platforms import api_payload_to_html, plan_fetch
 from .safety import UnsafeUrlError, validate_public_url
 
 app = FastAPI(title="Adapt My CV Vacancy Extractor", version="0.1.0")
@@ -24,10 +25,12 @@ def health() -> dict[str, str]:
 
 
 async def fetch_html(url: str) -> tuple[str, str]:
-    validate_public_url(url)
+    original_url = url
+    plan = plan_fetch(url)
+    validate_public_url(plan.fetch_url)
     headers = {"User-Agent": "AdaptMyCV/0.1 (+local vacancy extraction)"}
     async with httpx.AsyncClient(headers=headers, timeout=15, follow_redirects=False) as client:
-        current = url
+        current = plan.fetch_url
         for _ in range(4):
             response = await client.get(current)
             if response.is_redirect:
@@ -36,12 +39,17 @@ async def fetch_html(url: str) -> tuple[str, str]:
                 current = destination
                 continue
             response.raise_for_status()
+            if len(response.content) > 3_000_000:
+                raise HTTPException(status_code=413, detail="The vacancy response exceeds 3 MB.")
+            if plan.kind != "html":
+                try:
+                    return api_payload_to_html(plan, response.json()), original_url
+                except (ValueError, TypeError) as exc:
+                    raise HTTPException(status_code=422, detail=str(exc)) from exc
             content_type = response.headers.get("content-type", "")
             if "html" not in content_type.lower():
                 raise HTTPException(status_code=422, detail="The URL did not return HTML.")
-            if len(response.content) > 3_000_000:
-                raise HTTPException(status_code=413, detail="The HTML response exceeds 3 MB.")
-            return response.text, str(response.url)
+            return response.text, original_url
     raise HTTPException(status_code=422, detail="Too many redirects.")
 
 

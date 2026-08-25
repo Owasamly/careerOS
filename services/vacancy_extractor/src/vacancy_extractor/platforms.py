@@ -1,0 +1,105 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from html import escape
+import re
+from typing import Any
+from urllib.parse import urlparse, urlunparse
+
+
+@dataclass(frozen=True)
+class FetchPlan:
+    platform: str
+    fetch_url: str
+    kind: str = "html"
+    job_id: str = ""
+    account: str = ""
+
+
+def plan_fetch(url: str) -> FetchPlan:
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+    parts = [part for part in parsed.path.split("/") if part]
+
+    if ".jobs.personio." in host:
+        # Personio's /apply page contains the form, not the vacancy description.
+        path = re.sub(r"(/job/[^/]+)/apply/?$", r"\1", parsed.path, flags=re.I)
+        return FetchPlan("personio", urlunparse(parsed._replace(path=path)), account=host.split(".jobs.personio.", 1)[0])
+
+    if host in {"jobs.lever.co", "jobs.eu.lever.co"} and len(parts) >= 2:
+        region = "api.eu.lever.co" if host == "jobs.eu.lever.co" else "api.lever.co"
+        return FetchPlan("lever", f"https://{region}/v0/postings/{parts[0]}/{parts[1]}", "lever_json", parts[1], parts[0])
+
+    if host == "jobs.ashbyhq.com" and len(parts) >= 2:
+        job_id = parts[1] if parts[1] != "apply" else (parts[2] if len(parts) > 2 else "")
+        return FetchPlan("ashby", f"https://api.ashbyhq.com/posting-api/job-board/{parts[0]}", "ashby_json", job_id, parts[0])
+
+    greenhouse_hosts = {"boards.greenhouse.io", "job-boards.greenhouse.io"}
+    if host in greenhouse_hosts and "jobs" in parts:
+        index = parts.index("jobs")
+        if index > 0 and len(parts) > index + 1:
+            board, job_id = parts[index - 1], parts[index + 1]
+            return FetchPlan("greenhouse", f"https://boards-api.greenhouse.io/v1/boards/{board}/jobs/{job_id}?content=true", "greenhouse_json", job_id, board)
+
+    return FetchPlan(host or "unknown", url)
+
+
+def _section(title: str, content: str) -> str:
+    return f"<h2>{escape(title)}</h2>{content}" if content else ""
+
+
+def lever_to_html(data: dict[str, Any], account: str) -> str:
+    categories = data.get("categories") or {}
+    lists = "".join(_section(str(item.get("text", "")), str(item.get("content", ""))) for item in data.get("lists", []))
+    return (
+        "<html><head>"
+        f'<meta name="application-name" content="{escape(account.replace("-", " ").title())}">'
+        "</head><body><main>"
+        f"<h1>{escape(str(data.get('text', '')))}</h1>"
+        f'<div class="job-location">{escape(str(categories.get("location", "")))}</div>'
+        f"{data.get('description', '')}{lists}{data.get('additional', '')}"
+        "</main></body></html>"
+    )
+
+
+def ashby_to_html(data: dict[str, Any], account: str, job_id: str) -> str:
+    jobs = data.get("jobs") or []
+    job = next((item for item in jobs if job_id and job_id in f"{item.get('jobUrl', '')} {item.get('applyUrl', '')}"), None)
+    if job is None:
+        raise ValueError("The Ashby vacancy was not found on that public job board.")
+    location = job.get("location", "")
+    secondary = [item.get("location", "") for item in job.get("secondaryLocations") or []]
+    locations = " / ".join(filter(None, [location, *secondary]))
+    return (
+        "<html><head>"
+        f'<meta name="application-name" content="{escape(account.replace("-", " ").title())}">'
+        "</head><body><main>"
+        f"<h1>{escape(str(job.get('title', '')))}</h1>"
+        f'<div class="job-location">{escape(locations)}</div>'
+        f"{job.get('descriptionHtml', '')}"
+        "</main></body></html>"
+    )
+
+
+def greenhouse_to_html(data: dict[str, Any], account: str) -> str:
+    location = (data.get("location") or {}).get("name", "")
+    company = account.replace("-", " ").title()
+    return (
+        "<html><head>"
+        f'<meta name="application-name" content="{escape(company)}">'
+        "</head><body><main>"
+        f"<h1>{escape(str(data.get('title', '')))}</h1>"
+        f'<div class="job-location">{escape(str(location))}</div>'
+        f"{data.get('content', '')}"
+        "</main></body></html>"
+    )
+
+
+def api_payload_to_html(plan: FetchPlan, data: dict[str, Any]) -> str:
+    if plan.kind == "lever_json":
+        return lever_to_html(data, plan.account)
+    if plan.kind == "ashby_json":
+        return ashby_to_html(data, plan.account, plan.job_id)
+    if plan.kind == "greenhouse_json":
+        return greenhouse_to_html(data, plan.account)
+    raise ValueError(f"Unsupported ATS payload type: {plan.kind}")

@@ -14,9 +14,9 @@ from .models import ContactPerson, ExtractionInfo, JobData, LanguageRequirement,
 
 SECTION_NAMES = {
     "responsibilities": (
-        "responsibilities", "what you will do", "your tasks", "the role", "duties",
+        "responsibilities", "what you will do", "your tasks", "your mission", "the role", "duties",
         "deine aufgaben", "ihre aufgaben", "aufgabenbereich", "das erwartet dich",
-        "das erwartet sie", "was dich erwartet", "tätigkeiten", "verantwortlichkeiten",
+        "das erwartet sie", "was dich erwartet", "deine mission", "ihre mission", "tätigkeiten", "verantwortlichkeiten",
     ),
     "requirements": (
         "requirements", "what you bring", "your profile", "qualifications", "must have",

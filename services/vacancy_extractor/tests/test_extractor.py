@@ -1,4 +1,5 @@
 from vacancy_extractor import extract_vacancy
+from vacancy_extractor.platforms import api_payload_to_html, plan_fetch
 
 
 def test_extracts_jobposting_json_ld() -> None:
@@ -81,3 +82,39 @@ def test_extracts_german_sections_languages_and_contact() -> None:
     assert result.job.contact.role == "Talent Acquisition Manager"
     assert result.job.contact.email == "anna@example.com"
     assert result.job.contact.phone == "+4989123456"
+
+
+def test_personio_apply_url_is_normalized_and_mission_is_extracted() -> None:
+    plan = plan_fetch("https://example.jobs.personio.de/job/123/apply?language=de")
+    assert plan.platform == "personio"
+    assert plan.fetch_url == "https://example.jobs.personio.de/job/123?language=de"
+    result = extract_vacancy("<main><h1>Engineer</h1><h2>Your mission</h2><ul><li>Build secure systems</li></ul><h2>Your profile</h2><ul><li>Python</li></ul></main>")
+    assert result.job.responsibilities == ["Build secure systems"]
+    assert result.job.requirements == ["Python"]
+
+
+def test_lever_api_payload_keeps_named_sections() -> None:
+    plan = plan_fetch("https://jobs.lever.co/acme/abc-123")
+    html = api_payload_to_html(plan, {
+        "text": "Security Engineer",
+        "categories": {"location": "Berlin"},
+        "description": "<p>Protect our platform.</p>",
+        "lists": [
+            {"text": "Responsibilities", "content": "<ul><li>Investigate alerts</li></ul>"},
+            {"text": "Requirements", "content": "<ul><li>Python experience</li></ul>"},
+        ],
+    })
+    result = extract_vacancy(html)
+    assert result.job.responsibilities == ["Investigate alerts"]
+    assert result.job.requirements == ["Python experience"]
+
+
+def test_ashby_api_payload_selects_requested_job() -> None:
+    plan = plan_fetch("https://jobs.ashbyhq.com/acme/job-2")
+    html = api_payload_to_html(plan, {"jobs": [
+        {"title": "Wrong", "jobUrl": "https://jobs.ashbyhq.com/acme/job-1", "descriptionHtml": ""},
+        {"title": "Right", "jobUrl": "https://jobs.ashbyhq.com/acme/job-2", "location": "Remote", "descriptionHtml": "<h2>What you'll do</h2><ul><li>Ship safely</li></ul><h2>Requirements</h2><ul><li>Linux</li></ul>"},
+    ]})
+    result = extract_vacancy(html)
+    assert result.job.title == "Right"
+    assert result.job.requirements == ["Linux"]
