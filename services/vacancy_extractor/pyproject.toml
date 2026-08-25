@@ -1,0 +1,25 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "adapt-my-cv-vacancy-extractor"
+version = "0.1.0"
+description = "Deterministic job-posting extraction service for Adapt My CV"
+requires-python = ">=3.11"
+dependencies = [
+  "beautifulsoup4>=4.13,<5",
+  "fastapi>=0.116,<1",
+  "httpx>=0.28,<1",
+  "pydantic>=2.11,<3",
+  "uvicorn>=0.35,<1"
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.4,<9"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/vacancy_extractor"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

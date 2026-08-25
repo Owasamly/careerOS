@@ -36,3 +36,9 @@ next-env.d.ts
 /.wrangler/
 /outputs/
 /work/
+
+# python
+.venv/
+__pycache__/
+.pytest_cache/
+*.py[cod]

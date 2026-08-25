@@ -26,6 +26,11 @@ API is connected.
 4. PDF content and visual verification.
 5. Optional n8n orchestration.
 
+## Local services
+
+- `services/vacancy_extractor`: deterministic job URL/HTML extraction API for
+  n8n. It prefers Schema.org `JobPosting` JSON-LD and falls back to visible HTML.
+
 ## Local development
 
 ```bash
