@@ -22,6 +22,8 @@ SKILL_TERMS = (
     "aws", "azure", "gcp", "python", "java", "javascript", "typescript", "linux", "docker",
     "kubernetes", "terraform", "ansible", "git", "sql", "siem", "iam", "cloudtrail",
     "guardduty", "security hub", "incident response", "vulnerability management", "splunk",
+    "ai", "artificial intelligence", "microsoft 365", "power automate", "power bi", "n8n",
+    "zapier", "make", "notion", "salesforce", "excel",
 )
 
 LANGUAGE_TERMS = {
@@ -126,12 +128,28 @@ def extract_sections(soup: BeautifulSoup) -> dict[str, list[str]]:
 
 def derive_skills(job: JobData) -> list[str]:
     searchable = " ".join([job.description, *job.responsibilities, *job.requirements, *job.nice_to_haves]).lower()
-    return [term.upper() if term in {"aws", "gcp", "iam", "sql", "siem"} else term.title() for term in SKILL_TERMS if re.search(rf"(?<!\w){re.escape(term)}(?!\w)", searchable)]
+    return [term.upper() if term in {"aws", "gcp", "iam", "sql", "siem", "ai"} else term.title() for term in SKILL_TERMS if re.search(rf"(?<!\w){re.escape(term)}(?!\w)", searchable)]
 
 
 def derive_languages(job: JobData) -> list[str]:
     searchable = " ".join([job.description, *job.requirements, *job.nice_to_haves]).lower()
     return list(dict.fromkeys(label for term, label in LANGUAGE_TERMS.items() if re.search(rf"(?<!\w){re.escape(term)}(?!\w)", searchable)))
+
+
+def company_from_page(soup: BeautifulSoup, source_url: str | None) -> str:
+    company_node = soup.select_one("[class*='company' i], [data-company]")
+    if company_node:
+        value = clean_text(company_node.get_text(" ", strip=True))
+        if value:
+            return value
+    site_name = soup.select_one("meta[property='og:site_name'], meta[name='application-name']")
+    if site_name and site_name.get("content"):
+        return clean_text(site_name.get("content"))
+    hostname = urlparse(source_url).hostname if source_url else ""
+    if hostname and ".jobs.personio." in hostname:
+        tenant = hostname.split(".jobs.personio.", 1)[0].split(".")[-1]
+        return tenant.replace("-", " ").title()
+    return ""
 
 
 def extract_vacancy(html: str, source_url: str | None = None) -> VacancyDocument:
@@ -164,12 +182,11 @@ def extract_vacancy(html: str, source_url: str | None = None) -> VacancyDocument
         method = "json_ld"
     else:
         title_node = soup.find("h1") or soup.find("title")
-        company_node = soup.select_one("[class*='company' i], [data-company]")
         location_node = soup.select_one("[class*='location' i], [data-location]")
         main = soup.find("main") or soup.find("article") or soup.body
         job = JobData(
             title=clean_text(title_node.get_text(" ", strip=True) if title_node else ""),
-            company=clean_text(company_node.get_text(" ", strip=True) if company_node else ""),
+            company=company_from_page(soup, source_url),
             location=clean_text(location_node.get_text(" ", strip=True) if location_node else ""),
             description=clean_text(main.get_text(" ", strip=True) if main else ""),
             responsibilities=sections["responsibilities"],

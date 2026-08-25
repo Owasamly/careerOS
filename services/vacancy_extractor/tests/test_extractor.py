@@ -42,3 +42,15 @@ def test_falls_back_to_visible_sections() -> None:
     assert result.job.responsibilities == ["Investigate SIEM alerts"]
     assert result.job.requirements == ["Linux experience", "Incident response knowledge"]
     assert result.job.nice_to_haves == ["Python scripting"]
+
+
+def test_derives_personio_company_and_automation_stack() -> None:
+    html = """
+    <html><body><main><h1>Working Student AI Automation</h1>
+    <p>Build workflows using AI, Microsoft 365, Power Automate and n8n.</p>
+    <h2>Requirements</h2><ul><li>Strong Excel skills</li></ul>
+    </main></body></html>
+    """
+    result = extract_vacancy(html, "https://unternehmertum.jobs.personio.de/job/2707777")
+    assert result.job.company == "Unternehmertum"
+    assert {"AI", "Microsoft 365", "Power Automate", "N8N", "Excel"}.issubset(result.job.skills)
