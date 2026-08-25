@@ -1,6 +1,7 @@
 'use client';
 
 import { ChangeEvent, useMemo, useState } from 'react';
+import { mapInputs, type MappingReport } from './resume-engine';
 
 type InputMode = 'paste' | 'upload';
 type Step = 'profile' | 'vacancy' | 'tailoring';
@@ -85,10 +86,42 @@ export default function Home() {
   const [strength, setStrength] = useState('Balanced');
   const [pages, setPages] = useState('2 pages');
   const [reviewOpen, setReviewOpen] = useState(false);
+  const [report, setReport] = useState<MappingReport | null>(null);
+  const [generating, setGenerating] = useState(false);
 
   const bothValid = useMemo(() => {
     try { JSON.parse(profile); JSON.parse(vacancy); return true; } catch { return false; }
   }, [profile, vacancy]);
+
+  const reviewMapping = () => {
+    try {
+      setReport(mapInputs(JSON.parse(profile), JSON.parse(vacancy)));
+      setReviewOpen(true);
+    } catch {
+      setReport(null);
+    }
+  };
+
+  const generatePdf = async () => {
+    if (!report) return;
+    setGenerating(true);
+    try {
+      const { downloadResumePdf } = await import('./resume-pdf');
+      await downloadResumePdf(report.resume);
+    }
+    finally { setGenerating(false); }
+  };
+
+  const downloadJson = () => {
+    if (!report) return;
+    const blob = new Blob([JSON.stringify(report.resume, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = 'adapted-cv.json';
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <main className="app-shell">
@@ -116,7 +149,7 @@ export default function Home() {
           <div className="page-intro">
             <p className="eyebrow accent">Workspace setup</p>
             <h1>Turn a vacancy into a focused CV.</h1>
-            <p>Bring your complete career profile and the role you want. We’ll define what can be selected, rewritten, and rendered before connecting any automation.</p>
+            <p>Bring your complete career profile and the role you want. The local rule engine maps known fields, ranks relevant skills and projects, and renders a PDF without AI.</p>
           </div>
 
           <div className="input-grid">
@@ -127,7 +160,7 @@ export default function Home() {
           <section className="rules-card">
             <div className="card-heading"><div><p className="eyebrow">Tailoring rules</p><p className="card-description">Control how much changes and what the output must respect.</p></div><span className="optional">Optional</span></div>
             <div className="rule-grid">
-              <label>Rewrite strength<select value={strength} onChange={(event) => setStrength(event.target.value)}><option>Conservative</option><option>Balanced</option><option>Strong</option></select></label>
+              <label>Selection strength<select value={strength} onChange={(event) => setStrength(event.target.value)}><option>Conservative</option><option>Balanced</option><option>Strong</option></select></label>
               <label>Target length<select value={pages} onChange={(event) => setPages(event.target.value)}><option>1 page</option><option>2 pages</option><option>Best fit</option></select></label>
               <label>Renderer<select defaultValue="Reactive Resume"><option>Reactive Resume</option></select></label>
             </div>
@@ -140,7 +173,7 @@ export default function Home() {
 
           <div className="action-row">
             <div className="readiness"><span className={bothValid ? 'ready-light' : 'ready-light off'} />{bothValid ? 'Inputs are ready for review' : 'Fix JSON issues before continuing'}</div>
-            <button className="primary-button" disabled={!bothValid} onClick={() => setReviewOpen(true)}>Review tailoring brief <span>→</span></button>
+            <button className="primary-button" disabled={!bothValid} onClick={reviewMapping}>Validate &amp; map fields <span>→</span></button>
           </div>
         </section>
 
@@ -153,7 +186,7 @@ export default function Home() {
               ['Skill tags', 'Select'], ['Projects', 'Select'], ['Education', 'Preserve'],
             ].map(([name, action]) => <li key={name}><span className="check">✓</span><span>{name}<small>{action}</small></span></li>)}
           </ul>
-          <div className="renderer-card"><span className="renderer-icon">R</span><div><strong>Reactive Resume</strong><p>API-first PDF rendering</p></div><span className="recommended">Primary</span></div>
+          <div className="renderer-card"><span className="renderer-icon">R</span><div><strong>React PDF engine</strong><p>Local, client-side rendering</p></div><span className="recommended">Active</span></div>
           <div className="contract-footnote"><strong>No invented experience.</strong><p>Unmatched requirements will be flagged instead of fabricated.</p></div>
         </aside>
       </div>
@@ -162,10 +195,15 @@ export default function Home() {
         <div className="modal-backdrop" role="presentation" onClick={() => setReviewOpen(false)}>
           <section className="review-modal" role="dialog" aria-modal="true" aria-labelledby="review-title" onClick={(event) => event.stopPropagation()}>
             <button className="close-button" aria-label="Close review" onClick={() => setReviewOpen(false)}>×</button>
-            <p className="eyebrow accent">Ready for the next phase</p><h2 id="review-title">The interface has defined the contract.</h2>
-            <p>Next we’ll connect these fields to validation, tailoring logic and Reactive Resume without changing this workflow.</p>
-            <dl><div><dt>Rewrite</dt><dd>{strength}</dd></div><div><dt>Length</dt><dd>{pages}</dd></div><div><dt>Renderer</dt><dd>Reactive Resume</dd></div></dl>
-            <button className="primary-button" onClick={() => setReviewOpen(false)}>Keep editing</button>
+            <p className="eyebrow accent">Deterministic mapping report</p><h2 id="review-title">Review before generating.</h2>
+            <p>No content was invented or rewritten. Known fields were extracted and vacancy terms were used only to rank existing skills and projects.</p>
+            <dl><div><dt>Mapped</dt><dd>{report?.mapped.length ?? 0} groups</dd></div><div><dt>Warnings</dt><dd>{report?.warnings.length ?? 0}</dd></div><div><dt>Renderer</dt><dd>Local React PDF</dd></div></dl>
+            {report && <div className="mapping-report">
+              <div><strong>Mapped successfully</strong><ul>{report.mapped.map((item) => <li key={item}>✓ {item}</li>)}</ul></div>
+              <div><strong>Warnings</strong>{report.warnings.length ? <ul>{report.warnings.map((item) => <li key={item}>! {item}</li>)}</ul> : <p>No blocking warnings.</p>}</div>
+              {!!report.ignored.length && <div><strong>Ignored top-level fields</strong><p>{report.ignored.join(', ')}</p></div>}
+            </div>}
+            <div className="modal-actions"><button className="text-button" onClick={downloadJson}>Download mapped JSON</button><button className="primary-button" disabled={!report || generating} onClick={generatePdf}>{generating ? 'Generating…' : 'Generate PDF'}</button></div>
           </section>
         </div>
       )}
