@@ -24,6 +24,12 @@ SKILL_TERMS = (
     "guardduty", "security hub", "incident response", "vulnerability management", "splunk",
 )
 
+LANGUAGE_TERMS = {
+    "english": "English", "german": "German", "deutsch": "German", "french": "French",
+    "spanish": "Spanish", "italian": "Italian", "dutch": "Dutch", "polish": "Polish",
+    "arabic": "Arabic", "tigrinya": "Tigrinya",
+}
+
 
 def clean_text(value: Any) -> str:
     if value is None:
@@ -123,6 +129,11 @@ def derive_skills(job: JobData) -> list[str]:
     return [term.upper() if term in {"aws", "gcp", "iam", "sql", "siem"} else term.title() for term in SKILL_TERMS if re.search(rf"(?<!\w){re.escape(term)}(?!\w)", searchable)]
 
 
+def derive_languages(job: JobData) -> list[str]:
+    searchable = " ".join([job.description, *job.requirements, *job.nice_to_haves]).lower()
+    return list(dict.fromkeys(label for term, label in LANGUAGE_TERMS.items() if re.search(rf"(?<!\w){re.escape(term)}(?!\w)", searchable)))
+
+
 def extract_vacancy(html: str, source_url: str | None = None) -> VacancyDocument:
     soup = BeautifulSoup(html, "html.parser")
     structured: dict[str, Any] | None = None
@@ -169,6 +180,7 @@ def extract_vacancy(html: str, source_url: str | None = None) -> VacancyDocument
         warnings.append("No JobPosting JSON-LD was found; visible-page heuristics were used.")
 
     job.skills = derive_skills(job)
+    job.languages = derive_languages(job)
     required = ("title", "company", "description", "requirements")
     missing = [field for field in required if not getattr(job, field)]
     completeness = (len(required) - len(missing)) / len(required)

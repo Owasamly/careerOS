@@ -12,7 +12,7 @@ def test_extracts_jobposting_json_ld() -> None:
       "jobLocation": {"address": {"addressLocality": "Munich", "addressCountry": "DE"}},
       "employmentType": "FULL_TIME",
       "description": "Secure AWS infrastructure using IAM, Python, Terraform and incident response.",
-      "qualifications": ["AWS experience", "Python scripting"],
+      "qualifications": ["AWS experience", "Python scripting", "Professional English"],
       "responsibilities": ["Review IAM policies", "Automate security checks"]
     }
     </script></head></html>
@@ -21,8 +21,9 @@ def test_extracts_jobposting_json_ld() -> None:
     assert result.extraction.method == "json_ld"
     assert result.job.title == "Cloud Security Engineer"
     assert result.job.company == "Example GmbH"
-    assert result.job.requirements == ["AWS experience", "Python scripting"]
+    assert result.job.requirements == ["AWS experience", "Python scripting", "Professional English"]
     assert {"AWS", "IAM", "Python", "Terraform", "Incident Response"}.issubset(result.job.skills)
+    assert result.job.languages == ["English"]
 
 
 def test_falls_back_to_visible_sections() -> None:

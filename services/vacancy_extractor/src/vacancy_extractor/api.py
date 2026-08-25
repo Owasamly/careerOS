@@ -2,12 +2,20 @@ from __future__ import annotations
 
 import httpx
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
+from pathlib import Path
 
 from .extractor import extract_vacancy
 from .models import ExtractRequest, VacancyDocument
 from .safety import UnsafeUrlError, validate_public_url
 
 app = FastAPI(title="Adapt My CV Vacancy Extractor", version="0.1.0")
+UI_PATH = Path(__file__).with_name("static") / "index.html"
+
+
+@app.get("/", include_in_schema=False)
+def dashboard() -> FileResponse:
+    return FileResponse(UI_PATH)
 
 
 @app.get("/health")

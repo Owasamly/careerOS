@@ -12,7 +12,8 @@ python -m pip install -e ".[dev]"
 uvicorn vacancy_extractor.api:app --host 127.0.0.1 --port 8010
 ```
 
-OpenAPI documentation is available at `http://127.0.0.1:8010/docs`.
+The simple vacancy dashboard is available at `http://127.0.0.1:8010/`.
+OpenAPI documentation remains available at `http://127.0.0.1:8010/docs`.
 
 ## n8n request
 
