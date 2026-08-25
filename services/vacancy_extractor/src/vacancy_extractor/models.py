@@ -34,8 +34,23 @@ class JobData(BaseModel):
     requirements: list[str] = Field(default_factory=list)
     nice_to_haves: list[str] = Field(default_factory=list)
     skills: list[str] = Field(default_factory=list)
-    languages: list[str] = Field(default_factory=list)
+    languages: list[LanguageRequirement] = Field(default_factory=list)
+    contact: ContactPerson | None = None
     salary: str | None = None
+
+
+class LanguageRequirement(BaseModel):
+    language: str
+    level: str = "Not specified"
+    evidence: str
+    required: bool = True
+
+
+class ContactPerson(BaseModel):
+    name: str = ""
+    role: str = ""
+    email: str = ""
+    phone: str = ""
 
 
 class ExtractionInfo(BaseModel):

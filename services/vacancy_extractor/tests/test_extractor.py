@@ -23,7 +23,8 @@ def test_extracts_jobposting_json_ld() -> None:
     assert result.job.company == "Example GmbH"
     assert result.job.requirements == ["AWS experience", "Python scripting", "Professional English"]
     assert {"AWS", "IAM", "Python", "Terraform", "Incident Response"}.issubset(result.job.skills)
-    assert result.job.languages == ["English"]
+    assert result.job.languages[0].language == "English"
+    assert result.job.languages[0].level == "Professional"
 
 
 def test_falls_back_to_visible_sections() -> None:
@@ -54,3 +55,29 @@ def test_derives_personio_company_and_automation_stack() -> None:
     result = extract_vacancy(html, "https://unternehmertum.jobs.personio.de/job/2707777")
     assert result.job.company == "Unternehmertum"
     assert {"AI", "Microsoft 365", "Power Automate", "N8N", "Excel"}.issubset(result.job.skills)
+
+
+def test_extracts_german_sections_languages_and_contact() -> None:
+    html = """
+    <html><body><main><h1>Cloud Security Engineer</h1>
+      <h2>Deine Aufgaben</h2><ul><li>Du sicherst unsere AWS Umgebung.</li></ul>
+      <h2>Das bringst du mit</h2><ul>
+        <li>Verhandlungssichere Deutschkenntnisse auf C1-Niveau</li>
+        <li>Fließendes Englisch</li>
+      </ul>
+      <section class="contact"><h2>Dein Kontakt</h2><h3>Anna Beispiel</h3>
+        <p>Talent Acquisition Manager</p>
+        <a href="mailto:anna@example.com">anna@example.com</a>
+        <a href="tel:+4989123456">+49 89 123456</a>
+      </section>
+    </main></body></html>
+    """
+    result = extract_vacancy(html, "https://example.jobs/personio")
+    assert result.job.responsibilities == ["Du sicherst unsere AWS Umgebung."]
+    assert len(result.job.requirements) == 2
+    assert [(item.language, item.level) for item in result.job.languages] == [("German", "C1"), ("English", "Fluent")]
+    assert result.job.contact is not None
+    assert result.job.contact.name == "Anna Beispiel"
+    assert result.job.contact.role == "Talent Acquisition Manager"
+    assert result.job.contact.email == "anna@example.com"
+    assert result.job.contact.phone == "+4989123456"

@@ -9,13 +9,24 @@ from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup, Tag
 
-from .models import ExtractionInfo, JobData, SourceInfo, VacancyDocument
+from .models import ContactPerson, ExtractionInfo, JobData, LanguageRequirement, SourceInfo, VacancyDocument
 
 
 SECTION_NAMES = {
-    "responsibilities": ("responsibilities", "what you will do", "your tasks", "the role", "duties"),
-    "requirements": ("requirements", "what you bring", "your profile", "qualifications", "must have"),
-    "nice_to_haves": ("nice to have", "preferred", "bonus", "desirable", "ideally"),
+    "responsibilities": (
+        "responsibilities", "what you will do", "your tasks", "the role", "duties",
+        "deine aufgaben", "ihre aufgaben", "aufgabenbereich", "das erwartet dich",
+        "das erwartet sie", "was dich erwartet", "tätigkeiten", "verantwortlichkeiten",
+    ),
+    "requirements": (
+        "requirements", "what you bring", "your profile", "qualifications", "must have",
+        "dein profil", "ihr profil", "das bringst du mit", "das bringen sie mit",
+        "was du mitbringst", "anforderungen", "qualifikationen", "voraussetzungen",
+    ),
+    "nice_to_haves": (
+        "nice to have", "preferred", "bonus", "desirable", "ideally",
+        "wünschenswert", "von vorteil", "idealerweise", "zusätzliche qualifikationen",
+    ),
 }
 
 SKILL_TERMS = (
@@ -27,10 +38,26 @@ SKILL_TERMS = (
 )
 
 LANGUAGE_TERMS = {
-    "english": "English", "german": "German", "deutsch": "German", "french": "French",
-    "spanish": "Spanish", "italian": "Italian", "dutch": "Dutch", "polish": "Polish",
-    "arabic": "Arabic", "tigrinya": "Tigrinya",
+    "english": "English", "englisch": "English", "englischkenntnisse": "English",
+    "german": "German", "deutsch": "German", "deutschkenntnisse": "German",
+    "french": "French", "französisch": "French", "spanish": "Spanish", "spanisch": "Spanish",
+    "italian": "Italian", "italienisch": "Italian", "dutch": "Dutch", "niederländisch": "Dutch",
+    "polish": "Polish", "polnisch": "Polish", "arabic": "Arabic", "arabisch": "Arabic",
+    "tigrinya": "Tigrinya",
 }
+
+LEVEL_PATTERNS = (
+    (r"\b(c2|c1|b2|b1|a2|a1)\b", lambda match: match.group(1).upper()),
+    (r"\b(native|mother tongue|muttersprach\w*)\b", lambda _: "Native"),
+    (r"\b(fluent|fluency|fließend\w*|fliessend\w*|verhandlungssicher\w*)\b", lambda _: "Fluent"),
+    (r"\b(professional|business fluent|geschäftssicher\w*|gute\w* kenntnisse|very good)\b", lambda _: "Professional"),
+    (r"\b(basic|grundkenntnisse)\b", lambda _: "Basic"),
+)
+
+CONTACT_HEADINGS = (
+    "contact", "contact person", "questions", "your contact", "recruiter",
+    "kontakt", "ansprechpartner", "ansprechpartnerin", "fragen", "dein kontakt", "ihr kontakt",
+)
 
 
 def clean_text(value: Any) -> str:
@@ -131,9 +158,69 @@ def derive_skills(job: JobData) -> list[str]:
     return [term.upper() if term in {"aws", "gcp", "iam", "sql", "siem", "ai"} else term.title() for term in SKILL_TERMS if re.search(rf"(?<!\w){re.escape(term)}(?!\w)", searchable)]
 
 
-def derive_languages(job: JobData) -> list[str]:
-    searchable = " ".join([job.description, *job.requirements, *job.nice_to_haves]).lower()
-    return list(dict.fromkeys(label for term, label in LANGUAGE_TERMS.items() if re.search(rf"(?<!\w){re.escape(term)}(?!\w)", searchable)))
+def derive_languages(job: JobData, soup: BeautifulSoup) -> list[LanguageRequirement]:
+    evidence_lines = [*job.requirements, *job.nice_to_haves]
+    if not evidence_lines:
+        evidence_lines = []
+        for node in soup.select("li, p, label, [class*='requirement' i], [class*='qualification' i]"):
+            value = clean_text(node.get_text(" ", strip=True))
+            lowered = value.lower()
+            if 4 <= len(value) <= 350 and any(re.search(rf"(?<!\w){re.escape(term)}(?!\w)", lowered) for term in LANGUAGE_TERMS):
+                evidence_lines.append(value)
+        evidence_lines = list(dict.fromkeys(evidence_lines))
+    found: dict[str, LanguageRequirement] = {}
+    for evidence in evidence_lines:
+        lowered = evidence.lower()
+        for term, language in LANGUAGE_TERMS.items():
+            if not re.search(rf"(?<!\w){re.escape(term)}(?!\w)", lowered):
+                continue
+            level = "Not specified"
+            cefr_levels = set(re.findall(r"\b(?:c2|c1|b2|b1|a2|a1)\b", lowered, re.I))
+            if len(cefr_levels) == 1:
+                level = next(iter(cefr_levels)).upper()
+            elif not cefr_levels:
+                for pattern, formatter in LEVEL_PATTERNS[1:]:
+                    match = re.search(pattern, lowered, re.I)
+                    if match:
+                        level = formatter(match)
+                        break
+            required = evidence in job.requirements or bool(re.search(r"\b(required|must|erforderlich|vorausgesetzt|zwingend)\b", lowered))
+            candidate = LanguageRequirement(language=language, level=level, evidence=evidence, required=required)
+            current = found.get(language)
+            if not current or (current.level == "Not specified" and level != "Not specified") or (required and not current.required):
+                found[language] = candidate
+    return list(found.values())
+
+
+def extract_contact(soup: BeautifulSoup) -> ContactPerson | None:
+    scope: Tag | None = None
+    for heading in soup.find_all(re.compile(r"^h[1-6]$")):
+        heading_text = clean_text(heading.get_text(" ", strip=True)).lower()
+        if any(label in heading_text for label in CONTACT_HEADINGS):
+            scope = heading.parent if isinstance(heading.parent, Tag) else heading
+            break
+    if scope is None:
+        scope = soup.select_one("[class*='contact' i], [class*='recruit' i], [data-testid*='contact' i]")
+
+    search_root: Tag | BeautifulSoup = scope or soup
+    email_link = search_root.select_one("a[href^='mailto:']")
+    phone_link = search_root.select_one("a[href^='tel:']")
+    if not scope and not email_link and not phone_link:
+        return None
+    email = clean_text(email_link.get("href", "").removeprefix("mailto:").split("?", 1)[0]) if email_link else ""
+    phone = clean_text(phone_link.get("href", "").removeprefix("tel:")) if phone_link else ""
+
+    name = ""
+    role = ""
+    if scope:
+        candidates = [clean_text(node.get_text(" ", strip=True)) for node in scope.select("h3, h4, strong, [class*='name' i], p")]
+        candidates = [value for value in candidates if value and value not in {email, phone} and not any(label == value.lower() for label in CONTACT_HEADINGS)]
+        name_pattern = re.compile(r"^[A-ZÄÖÜ][A-Za-zÀ-ÖØ-öø-ÿ'’-]+(?:\s+[A-ZÄÖÜ][A-Za-zÀ-ÖØ-öø-ÿ'’-]+){1,3}$")
+        name = next((value for value in candidates if name_pattern.match(value)), "")
+        role = next((value for value in candidates if value != name and any(word in value.lower() for word in ("recruit", "talent", "people", "personal", "human resources", "hr"))), "")
+    if not any((name, role, email, phone)):
+        return None
+    return ContactPerson(name=name, role=role, email=email, phone=phone)
 
 
 def company_from_page(soup: BeautifulSoup, source_url: str | None) -> str:
@@ -197,7 +284,8 @@ def extract_vacancy(html: str, source_url: str | None = None) -> VacancyDocument
         warnings.append("No JobPosting JSON-LD was found; visible-page heuristics were used.")
 
     job.skills = derive_skills(job)
-    job.languages = derive_languages(job)
+    job.languages = derive_languages(job, soup)
+    job.contact = extract_contact(soup)
     required = ("title", "company", "description", "requirements")
     missing = [field for field in required if not getattr(job, field)]
     completeness = (len(required) - len(missing)) / len(required)
