@@ -6,10 +6,10 @@ import type { ResumeData } from './resume-engine';
 
 const styles = StyleSheet.create({
   page: { padding: 38, fontFamily: 'Helvetica', fontSize: 9.5, lineHeight: 1.45, color: '#17211d' },
-  header: { borderBottomWidth: 2, borderBottomColor: '#176b52', paddingBottom: 12, marginBottom: 16 },
-  name: { fontSize: 24, fontFamily: 'Helvetica-Bold', color: '#102c24' },
-  headline: { fontSize: 12, color: '#176b52', marginTop: 3 },
-  contact: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 7, color: '#52615b' },
+  header: { borderBottomWidth: 2, borderBottomColor: '#176b52', paddingBottom: 13, marginBottom: 16 },
+  name: { fontSize: 24, lineHeight: 1.16, fontFamily: 'Helvetica-Bold', color: '#102c24' },
+  headline: { fontSize: 11.5, lineHeight: 1.3, color: '#176b52', marginTop: 5 },
+  contact: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 8, color: '#52615b' },
   section: { marginBottom: 13 },
   sectionTitle: { fontSize: 10, fontFamily: 'Helvetica-Bold', textTransform: 'uppercase', letterSpacing: 1.3, color: '#176b52', marginBottom: 6 },
   item: { marginBottom: 8 },
@@ -19,7 +19,7 @@ const styles = StyleSheet.create({
   detail: { color: '#52615b' },
   bullet: { marginLeft: 9, marginTop: 2 },
   skills: { flexDirection: 'row', flexWrap: 'wrap', gap: 5 },
-  pill: { backgroundColor: '#edf5f1', paddingHorizontal: 6, paddingVertical: 3, borderRadius: 3 },
+  pill: { backgroundColor: '#edf5f1', paddingHorizontal: 5, paddingVertical: 2.5, borderRadius: 3, fontSize: 8.7 },
   link: { color: '#176b52', textDecoration: 'none' },
 });
 
