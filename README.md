@@ -1,5 +1,9 @@
 # Adapt My CV
 
+Local-first CV mapping and PDF generation. The application does not call an AI
+model or send candidate/vacancy JSON to an external API. PDF files are rendered
+inside the browser with `@react-pdf/renderer`.
+
 Adapt My CV is a vacancy-to-resume workspace. The first product slice defines
 the data contract through a static interface before any tailoring or rendering
 API is connected.
