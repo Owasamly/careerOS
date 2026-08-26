@@ -55,8 +55,12 @@ class ContactPerson(BaseModel):
 
 class ExtractionInfo(BaseModel):
     method: Literal["json_ld", "html_heuristic"]
+    status: Literal["ready", "needs_review", "failed"]
+    can_generate_cv: bool
     confidence: float = Field(ge=0, le=1)
     missing_fields: list[str] = Field(default_factory=list)
+    blockers: list[str] = Field(default_factory=list)
+    field_confidence: dict[str, float] = Field(default_factory=dict)
     warnings: list[str] = Field(default_factory=list)
 
 

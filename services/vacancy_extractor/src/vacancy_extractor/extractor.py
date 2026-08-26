@@ -14,7 +14,7 @@ from .models import ContactPerson, ExtractionInfo, JobData, LanguageRequirement,
 
 SECTION_NAMES = {
     "responsibilities": (
-        "responsibilities", "what you will do", "your tasks", "your mission", "the role", "duties",
+        "responsibilities", "what you will do", "what you'll do", "what you’ll do", "your tasks", "your mission", "the role", "duties",
         "deine aufgaben", "ihre aufgaben", "aufgabenbereich", "das erwartet dich",
         "das erwartet sie", "was dich erwartet", "deine mission", "ihre mission", "tätigkeiten", "verantwortlichkeiten",
     ),
@@ -239,6 +239,44 @@ def company_from_page(soup: BeautifulSoup, source_url: str | None) -> str:
     return ""
 
 
+def page_blockers(soup: BeautifulSoup, job: JobData) -> list[str]:
+    title = clean_text((soup.title.string if soup.title else "") or "").lower()
+    headings = " ".join(clean_text(node.get_text(" ", strip=True)).lower() for node in soup.find_all(re.compile(r"^h[1-3]$")))
+    blockers: list[str] = []
+    challenge_markers = ("access denied", "just a moment", "verify you are human", "captcha", "bot detection")
+    login_markers = ("sign in", "log in", "anmelden", "login")
+    if any(marker in title or marker in headings for marker in challenge_markers):
+        blockers.append("The supplied page appears to be an access challenge or bot-protection page.")
+    elif any(marker == title or marker in headings for marker in login_markers) and len(job.description) < 1200:
+        blockers.append("The supplied page appears to require authentication rather than showing a public vacancy.")
+
+    form_fields = len(soup.select("input, textarea, select"))
+    if form_fields >= 5 and not job.responsibilities and not job.requirements:
+        blockers.append("The supplied page appears to be an application form, not the job description.")
+    if not job.title:
+        blockers.append("A job title is required before CV generation.")
+    evidence_count = len(job.responsibilities) + len(job.requirements)
+    if len(job.description) < 120 and evidence_count < 2:
+        blockers.append("The extracted job description is too short to tailor a CV safely.")
+    if not job.responsibilities and not job.requirements:
+        blockers.append("Neither responsibilities nor requirements could be identified.")
+    return list(dict.fromkeys(blockers))
+
+
+def field_confidence(job: JobData, method: str) -> dict[str, float]:
+    base = 0.92 if method == "json_ld" else 0.72
+    return {
+        "title": base if job.title else 0.0,
+        "company": base if job.company else 0.0,
+        "description": base if len(job.description) >= 120 else (0.35 if job.description else 0.0),
+        "responsibilities": base if len(job.responsibilities) >= 2 else (0.48 if job.responsibilities else 0.0),
+        "requirements": base if len(job.requirements) >= 2 else (0.48 if job.requirements else 0.0),
+        "skills": 0.7 if job.skills else 0.0,
+        "languages": 0.85 if job.languages else 0.0,
+        "contact": 0.85 if job.contact else 0.0,
+    }
+
+
 def extract_vacancy(html: str, source_url: str | None = None) -> VacancyDocument:
     soup = BeautifulSoup(html, "html.parser")
     structured: dict[str, Any] | None = None
@@ -286,13 +324,34 @@ def extract_vacancy(html: str, source_url: str | None = None) -> VacancyDocument
     job.skills = derive_skills(job)
     job.languages = derive_languages(job, soup)
     job.contact = extract_contact(soup)
-    required = ("title", "company", "description", "requirements")
+    required = ("title", "company", "description", "requirements", "responsibilities")
     missing = [field for field in required if not getattr(job, field)]
     completeness = (len(required) - len(missing)) / len(required)
     confidence = round((0.72 if method == "json_ld" else 0.42) + completeness * (0.25 if method == "json_ld" else 0.35), 2)
+    blockers = page_blockers(soup, job)
+    sparse_sections = [name for name in ("responsibilities", "requirements") if len(getattr(job, name)) == 1]
+    if sparse_sections:
+        warnings.append(f"Only one item was found for: {', '.join(sparse_sections)}.")
+    if not job.skills:
+        warnings.append("No technical skills were detected from vacancy evidence.")
+    if blockers:
+        status = "failed"
+    elif missing or confidence < 0.75:
+        status = "needs_review"
+    else:
+        status = "ready"
     hostname = urlparse(source_url).hostname if source_url else None
     return VacancyDocument(
         source=SourceInfo(url=source_url, platform=hostname, extracted_at=datetime.now(timezone.utc).isoformat()),
         job=job,
-        extraction=ExtractionInfo(method=method, confidence=min(confidence, 0.99), missing_fields=missing, warnings=warnings),
+        extraction=ExtractionInfo(
+            method=method,
+            status=status,
+            can_generate_cv=not blockers,
+            confidence=min(confidence, 0.99),
+            missing_fields=missing,
+            blockers=blockers,
+            field_confidence=field_confidence(job, method),
+            warnings=warnings,
+        ),
     )

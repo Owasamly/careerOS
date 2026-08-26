@@ -26,6 +26,8 @@ def test_extracts_jobposting_json_ld() -> None:
     assert {"AWS", "IAM", "Python", "Terraform", "Incident Response"}.issubset(result.job.skills)
     assert result.job.languages[0].language == "English"
     assert result.job.languages[0].level == "Professional"
+    assert result.extraction.status == "ready"
+    assert result.extraction.can_generate_cv is True
 
 
 def test_falls_back_to_visible_sections() -> None:
@@ -118,3 +120,24 @@ def test_ashby_api_payload_selects_requested_job() -> None:
     result = extract_vacancy(html)
     assert result.job.title == "Right"
     assert result.job.requirements == ["Linux"]
+    assert result.job.responsibilities == ["Ship safely"]
+
+
+def test_blocks_application_form_without_job_sections() -> None:
+    html = """
+    <html><head><title>Apply</title></head><body><main><h1>Apply for this job</h1>
+      <p>Please enter your personal details below.</p>
+      <input><input><input><input><input><textarea></textarea>
+    </main></body></html>
+    """
+    result = extract_vacancy(html)
+    assert result.extraction.status == "failed"
+    assert result.extraction.can_generate_cv is False
+    assert any("application form" in item for item in result.extraction.blockers)
+
+
+def test_blocks_access_challenge_page() -> None:
+    result = extract_vacancy("<html><head><title>Just a moment</title></head><body><h1>Verify you are human</h1></body></html>")
+    assert result.extraction.status == "failed"
+    assert result.extraction.can_generate_cv is False
+    assert result.extraction.field_confidence["requirements"] == 0
