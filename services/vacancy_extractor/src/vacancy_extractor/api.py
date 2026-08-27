@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import httpx
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pathlib import Path
 
@@ -11,6 +12,12 @@ from .platforms import api_payload_to_html, plan_fetch
 from .safety import UnsafeUrlError, validate_public_url
 
 app = FastAPI(title="Adapt My CV Vacancy Extractor", version="0.1.0")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_methods=["POST", "GET"],
+    allow_headers=["Content-Type"],
+)
 UI_PATH = Path(__file__).with_name("static") / "index.html"
 
 

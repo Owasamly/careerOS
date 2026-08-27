@@ -5,6 +5,17 @@ import { mapInputs, type MappingReport } from './resume-engine';
 
 type InputMode = 'paste' | 'upload';
 type Step = 'profile' | 'vacancy' | 'tailoring';
+type ExtractionResult = {
+  job: Record<string, unknown>;
+  extraction: {
+    status: 'ready' | 'needs_review' | 'failed';
+    can_generate_cv: boolean;
+    confidence: number;
+    blockers: string[];
+    warnings: string[];
+    missing_fields: string[];
+  };
+};
 
 const exampleProfile = `{
   "basics": {
@@ -83,6 +94,10 @@ export default function Home() {
   const [vacancyMode, setVacancyMode] = useState<InputMode>('paste');
   const [profile, setProfile] = useState(exampleProfile);
   const [vacancy, setVacancy] = useState(exampleVacancy);
+  const [jobUrl, setJobUrl] = useState('');
+  const [extracting, setExtracting] = useState(false);
+  const [extraction, setExtraction] = useState<ExtractionResult['extraction'] | null>(null);
+  const [extractError, setExtractError] = useState('');
   const [strength, setStrength] = useState('Balanced');
   const [pages, setPages] = useState('2 pages');
   const [reviewOpen, setReviewOpen] = useState(false);
@@ -92,6 +107,30 @@ export default function Home() {
   const bothValid = useMemo(() => {
     try { JSON.parse(profile); JSON.parse(vacancy); return true; } catch { return false; }
   }, [profile, vacancy]);
+
+  const extractionAllowsGeneration = !extraction || extraction.can_generate_cv;
+
+  const extractVacancy = async () => {
+    if (!jobUrl.trim()) return;
+    setExtracting(true);
+    setExtractError('');
+    setExtraction(null);
+    try {
+      const response = await fetch('http://127.0.0.1:8010/extract', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: jobUrl.trim() }),
+      });
+      const data = await response.json() as ExtractionResult & { detail?: string };
+      if (!response.ok) throw new Error(data.detail || 'The vacancy could not be extracted.');
+      if (!data.job || !data.extraction) throw new Error('The extractor returned an invalid response.');
+      setVacancy(JSON.stringify(data, null, 2));
+      setVacancyMode('paste');
+      setExtraction(data.extraction);
+      setActiveStep('vacancy');
+    } catch (error) {
+      setExtractError(error instanceof Error ? error.message : 'Could not connect to the local extractor.');
+    } finally { setExtracting(false); }
+  };
 
   const reviewMapping = () => {
     try {
@@ -126,7 +165,7 @@ export default function Home() {
   return (
     <main className="app-shell">
       <header className="topbar">
-        <a className="brand" href="#top" aria-label="Adapt My CV home"><span className="brand-mark">A</span><span>Adapt My CV</span></a>
+        <a className="brand" href="#top" aria-label="careerOS home"><span className="brand-mark">C</span><span>careerOS</span></a>
         <div className="topbar-center"><span className="draft-dot" /> New tailoring draft</div>
         <div className="topbar-actions"><button className="text-button">Schema guide</button><button className="avatar" aria-label="Profile menu">ON</button></div>
       </header>
@@ -152,9 +191,16 @@ export default function Home() {
             <p>Bring your complete career profile and the role you want. The local rule engine maps known fields, ranks relevant skills and projects, and renders a PDF without AI.</p>
           </div>
 
+          <section className="extract-card">
+            <div className="card-heading"><div><p className="eyebrow accent">Job URL extractor</p><p className="card-description">Paste a public vacancy URL. The local Python service fills the vacancy JSON for review.</p></div>{extraction && <span className={`status ${extraction.status === 'ready' ? 'good' : extraction.status === 'failed' ? 'bad' : 'quiet'}`}>{extraction.status.replace('_', ' ')}</span>}</div>
+            <div className="extract-row"><input type="url" value={jobUrl} onChange={(event) => setJobUrl(event.target.value)} placeholder="https://company.jobs.personio.de/job/123" aria-label="Job vacancy URL" /><button className="primary-button" disabled={!jobUrl.trim() || extracting} onClick={extractVacancy}>{extracting ? 'Extracting…' : 'Extract vacancy'}</button></div>
+            {extractError && <p className="extract-message error">{extractError} Is the Python service running on port 8010?</p>}
+            {extraction && <div className={`extraction-summary ${extraction.can_generate_cv ? '' : 'blocked'}`}><strong>{Math.round(extraction.confidence * 100)}% confidence</strong><span>{extraction.can_generate_cv ? 'Vacancy data populated below. Review it before mapping.' : 'PDF generation blocked until the extraction is corrected.'}</span>{[...extraction.blockers, ...extraction.warnings, ...extraction.missing_fields.map((field) => `Missing: ${field}`)].length > 0 && <ul>{[...extraction.blockers, ...extraction.warnings, ...extraction.missing_fields.map((field) => `Missing: ${field}`)].map((item) => <li key={item}>{item}</li>)}</ul>}</div>}
+          </section>
+
           <div className="input-grid">
             <JsonInput label="Candidate profile" description="The source of truth. Keep every role, project, skill and achievement here." value={profile} setValue={setProfile} mode={profileMode} setMode={setProfileMode} placeholder="Paste your canonical profile JSON" />
-            <JsonInput label="Job vacancy" description="Use structured fields for responsibilities, requirements and nice-to-haves." value={vacancy} setValue={setVacancy} mode={vacancyMode} setMode={setVacancyMode} placeholder="Paste the structured vacancy JSON" />
+            <JsonInput label="Job vacancy" description="Use structured fields for responsibilities, requirements and nice-to-haves." value={vacancy} setValue={(value) => { setVacancy(value); setExtraction(null); }} mode={vacancyMode} setMode={setVacancyMode} placeholder="Paste the structured vacancy JSON" />
           </div>
 
           <section className="rules-card">
@@ -172,8 +218,8 @@ export default function Home() {
           </section>
 
           <div className="action-row">
-            <div className="readiness"><span className={bothValid ? 'ready-light' : 'ready-light off'} />{bothValid ? 'Inputs are ready for review' : 'Fix JSON issues before continuing'}</div>
-            <button className="primary-button" disabled={!bothValid} onClick={reviewMapping}>Validate &amp; map fields <span>→</span></button>
+            <div className="readiness"><span className={bothValid && extractionAllowsGeneration ? 'ready-light' : 'ready-light off'} />{!bothValid ? 'Fix JSON issues before continuing' : !extractionAllowsGeneration ? 'Extraction blockers must be fixed first' : extraction?.status === 'needs_review' ? 'Review the extracted vacancy carefully' : 'Inputs are ready for review'}</div>
+            <button className="primary-button" disabled={!bothValid || !extractionAllowsGeneration} onClick={reviewMapping}>Validate &amp; map fields <span>→</span></button>
           </div>
         </section>
 
