@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://career-os.local/schemas/candidate-profile.schema.json",
+  "title": "careerOS Candidate Master Profile",
+  "type": "object",
+  "required": ["basics", "experience", "education", "skills", "projects"],
+  "properties": {
+    "basics": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "headline": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "location": { "type": "string" },
+        "website": { "type": "string" }
+      }
+    },
+    "summary": { "type": "string" },
+    "experience": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "company", "position", "bullets"],
+        "properties": {
+          "id": { "$ref": "#/$defs/id" },
+          "company": { "type": "string" },
+          "position": { "type": "string" },
+          "date": { "type": "string" },
+          "summary": { "type": "string" },
+          "bullets": { "type": "array", "items": { "$ref": "#/$defs/taggedText" } }
+        }
+      }
+    },
+    "education": { "type": "array", "items": { "type": "object" } },
+    "skills": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "keywords"],
+        "properties": {
+          "id": { "$ref": "#/$defs/id" },
+          "name": { "type": "string" },
+          "keywords": { "type": "array", "items": { "type": "string" } },
+          "tags": { "$ref": "#/$defs/tags" }
+        }
+      }
+    },
+    "projects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "description"],
+        "properties": {
+          "id": { "$ref": "#/$defs/id" },
+          "name": { "type": "string" },
+          "description": { "type": "string" },
+          "url": { "type": "string" },
+          "keywords": { "type": "array", "items": { "type": "string" } },
+          "tags": { "$ref": "#/$defs/tags" }
+        }
+      }
+    },
+    "languages": { "type": "array", "items": { "type": "object" } }
+  },
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+    "tags": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+    "taggedText": {
+      "type": "object",
+      "required": ["id", "text", "tags"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "text": { "type": "string", "minLength": 1 },
+        "tags": { "$ref": "#/$defs/tags" }
+      }
+    }
+  }
+}

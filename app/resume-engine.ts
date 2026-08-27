@@ -15,12 +15,39 @@ export type MappingReport = {
   warnings: string[];
   ignored: string[];
   vacancyTerms: string[];
+  coverage: RequirementCoverage[];
+  coverageSummary: { matched: number; partial: number; unsupported: number };
+};
+
+export type EvidenceMatch = {
+  id: string;
+  type: 'skill' | 'project' | 'experience';
+  label: string;
+  matchedTerms: string[];
+  score: number;
+};
+
+export type RequirementCoverage = {
+  requirement: string;
+  status: 'matched' | 'partial' | 'unsupported';
+  score: number;
+  evidence: EvidenceMatch[];
 };
 
 const record = (value: unknown): JsonRecord => value && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : {};
 const array = (value: unknown): unknown[] => Array.isArray(value) ? value : [];
 const text = (...values: unknown[]) => values.find((value) => typeof value === 'string' && value.trim())?.toString().trim() ?? '';
 const strings = (value: unknown) => array(value).map((item) => typeof item === 'string' ? item.trim() : '').filter(Boolean);
+const contentStrings = (value: unknown) => array(value).map((item) => typeof item === 'string' ? item.trim() : text(record(item).text, record(item).description)).filter(Boolean);
+const stableId = (prefix: string, value: unknown, index: number) => text(record(value).id) || `${prefix}-${index + 1}`;
+
+const aliases: Record<string, string[]> = {
+  aws: ['amazon', 'cloudtrail', 'guardduty', 'iam'],
+  cybersecurity: ['security', 'cyber', 'infosec'],
+  automation: ['workflow', 'n8n', 'zapier', 'power', 'automate'],
+  siem: ['splunk', 'sentinel', 'monitoring'],
+  python: ['scripting'],
+};
 
 const tokens = (value: unknown) => {
   const source = typeof value === 'string' ? value : JSON.stringify(value ?? '');
@@ -33,10 +60,38 @@ const relevance = (value: unknown, vacancyTerms: string[]) => {
   return vacancyTerms.reduce((score, term) => score + (own.has(term) ? 1 : 0), 0);
 };
 
+const expandedTokens = (value: unknown) => {
+  const own = new Set(tokens(value));
+  for (const [canonical, related] of Object.entries(aliases)) {
+    if (own.has(canonical) || related.some((term) => own.has(term))) {
+      own.add(canonical);
+      related.forEach((term) => own.add(term));
+    }
+  }
+  return [...own];
+};
+
+function buildCoverage(requirements: string[], evidence: Array<Omit<EvidenceMatch, 'matchedTerms' | 'score'> & { content: unknown; weight: number }>): RequirementCoverage[] {
+  return requirements.map((requirement) => {
+    const requiredTerms = expandedTokens(requirement);
+    const matches = evidence.map((item) => {
+      const evidenceTerms = new Set(expandedTokens(item.content));
+      const matchedTerms = requiredTerms.filter((term) => evidenceTerms.has(term));
+      return { id: item.id, type: item.type, label: item.label, matchedTerms, score: matchedTerms.length * item.weight };
+    }).filter((item) => item.score > 0).sort((a, b) => b.score - a.score).slice(0, 5);
+    const score = matches.reduce((sum, item) => sum + item.score, 0);
+    const uniqueMatched = new Set(matches.flatMap((item) => item.matchedTerms)).size;
+    const ratio = requiredTerms.length ? uniqueMatched / requiredTerms.length : 0;
+    const status = score >= 8 || ratio >= 0.6 ? 'matched' : score >= 3 || ratio >= 0.25 ? 'partial' : 'unsupported';
+    return { requirement, status, score, evidence: matches };
+  });
+}
+
 export function mapInputs(profileInput: unknown, vacancyInput: unknown): MappingReport {
   const profile = record(profileInput);
   const basics = record(profile.basics ?? profile.profile ?? profile.personal);
   const job = record(record(vacancyInput).job ?? vacancyInput);
+  const requirements = [...strings(job.requirements), ...strings(job.responsibilities), ...strings(job.nice_to_haves ?? job.niceToHaves)];
   const vacancyTerms = tokens({
     title: job.title,
     responsibilities: job.responsibilities ?? job.tasks,
@@ -59,15 +114,16 @@ export function mapInputs(profileInput: unknown, vacancyInput: unknown): Mapping
   if (mappedBasics.headline) mapped.push('Headline'); else warnings.push('Professional headline is missing.');
   if (mappedBasics.email) mapped.push('Email');
 
-  const experience = array(profile.experience ?? profile.work).map((raw) => {
+  const rawExperience = array(profile.experience ?? profile.work);
+  const experience = rawExperience.map((raw) => {
     const item = record(raw);
-    const highlights = strings(item.highlights ?? item.bullets ?? item.achievements);
+    const highlights = contentStrings(item.highlights ?? item.bullets ?? item.achievements);
     return {
       company: text(item.company, item.name, item.organization),
       position: text(item.position, item.role, item.title),
       date: text(item.date, item.period, [item.startDate, item.endDate].filter(Boolean).join(' – ')),
       summary: text(item.summary, item.description),
-      highlights,
+      highlights: highlights.sort((a, b) => relevance(b, vacancyTerms) - relevance(a, vacancyTerms)),
     };
   }).filter((item) => item.company || item.position);
   if (experience.length) mapped.push(`${experience.length} experience entries`); else warnings.push('No experience entries were found.');
@@ -83,7 +139,8 @@ export function mapInputs(profileInput: unknown, vacancyInput: unknown): Mapping
   }).filter((item) => item.institution || item.degree);
   if (education.length) mapped.push(`${education.length} education entries`);
 
-  const skills = array(profile.skills).map((raw) => {
+  const rawSkills = array(profile.skills);
+  const skills = rawSkills.map((raw) => {
     if (typeof raw === 'string') return { name: raw, keywords: [] as string[], score: relevance(raw, vacancyTerms) };
     const item = record(raw);
     const name = text(item.name, item.category, item.title);
@@ -92,7 +149,8 @@ export function mapInputs(profileInput: unknown, vacancyInput: unknown): Mapping
   }).filter((item) => item.name || item.keywords.length).sort((a, b) => b.score - a.score);
   if (skills.length) mapped.push(`${skills.length} skill groups`); else warnings.push('No skills were found.');
 
-  const projects = array(profile.projects).map((raw) => {
+  const rawProjects = array(profile.projects);
+  const projects = rawProjects.map((raw) => {
     const item = record(raw);
     const name = text(item.name, item.title);
     const description = text(item.description, item.summary);
@@ -104,6 +162,31 @@ export function mapInputs(profileInput: unknown, vacancyInput: unknown): Mapping
   const known = new Set(['basics', 'profile', 'personal', 'name', 'headline', 'title', 'email', 'phone', 'location', 'website', 'summary', 'objective', 'experience', 'work', 'education', 'skills', 'projects']);
   const ignored = Object.keys(profile).filter((key) => !known.has(key));
   if (!vacancyTerms.length) warnings.push('The vacancy contains no usable requirements or responsibilities for ranking.');
+
+  const evidence: Array<Omit<EvidenceMatch, 'matchedTerms' | 'score'> & { content: unknown; weight: number }> = [];
+  rawSkills.forEach((raw, index) => {
+    const item = typeof raw === 'string' ? { name: raw } : record(raw);
+    evidence.push({ id: stableId('skill', item, index), type: 'skill', label: text(item.name, item.category, item.title, raw), content: { item, tags: item.tags }, weight: 5 });
+  });
+  rawProjects.forEach((raw, index) => {
+    const item = record(raw);
+    evidence.push({ id: stableId('project', item, index), type: 'project', label: text(item.name, item.title, `Project ${index + 1}`), content: { item, tags: item.tags }, weight: 3 });
+  });
+  rawExperience.forEach((raw, experienceIndex) => {
+    const item = record(raw);
+    array(item.highlights ?? item.bullets ?? item.achievements).forEach((bullet, bulletIndex) => {
+      const bulletRecord = record(bullet);
+      const bulletText = typeof bullet === 'string' ? bullet : text(bulletRecord.text, bulletRecord.description);
+      evidence.push({ id: text(bulletRecord.id) || `${stableId('experience', item, experienceIndex)}-bullet-${bulletIndex + 1}`, type: 'experience', label: bulletText, content: { text: bulletText, tags: bulletRecord.tags }, weight: 4 });
+    });
+  });
+  const coverage = buildCoverage(requirements, evidence);
+  const coverageSummary = {
+    matched: coverage.filter((item) => item.status === 'matched').length,
+    partial: coverage.filter((item) => item.status === 'partial').length,
+    unsupported: coverage.filter((item) => item.status === 'unsupported').length,
+  };
+  if (coverageSummary.unsupported) warnings.push(`${coverageSummary.unsupported} vacancy requirements have no supporting profile evidence.`);
 
   return {
     resume: {
@@ -118,5 +201,7 @@ export function mapInputs(profileInput: unknown, vacancyInput: unknown): Mapping
     warnings,
     ignored,
     vacancyTerms,
+    coverage,
+    coverageSummary,
   };
 }
