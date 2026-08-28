@@ -46,3 +46,28 @@ starter document is available at `schemas/candidate-profile.example.json`.
 pnpm install
 pnpm dev
 ```
+
+## Verification
+
+Run the deterministic matcher regression tests:
+
+```bash
+pnpm test:matcher
+```
+
+Check the frontend and production bundle:
+
+```bash
+pnpm lint
+pnpm build
+```
+
+Run the vacancy-extractor tests from `services/vacancy_extractor`:
+
+```powershell
+.venv\Scripts\python.exe -m pytest -q
+```
+
+The matcher suite verifies evidence traceability, matched/partial/unsupported
+coverage, relevance ordering, and the rule that unsupported vacancy claims are
+never inserted into the generated CV.
