@@ -123,6 +123,35 @@ def test_ashby_api_payload_selects_requested_job() -> None:
     assert result.job.responsibilities == ["Ship safely"]
 
 
+def test_ashby_strong_paragraph_labels_become_sections() -> None:
+    plan = plan_fetch("https://jobs.ashbyhq.com/Dataleap/664cee48-f04c-494a-9820-33681fc77999")
+    html = api_payload_to_html(plan, {"jobs": [{
+        "id": "664cee48-f04c-494a-9820-33681fc77999",
+        "title": "Working Student Integrations",
+        "jobUrl": "https://jobs.ashbyhq.com/Dataleap/664cee48-f04c-494a-9820-33681fc77999",
+        "descriptionHtml": "<p><strong>What You’ll Do</strong></p><ul><li>Build integrations</li></ul><p><strong>You’re a Fit If</strong></p><ul><li>Python and TypeScript</li></ul>",
+    }]})
+    result = extract_vacancy(html)
+    assert result.job.responsibilities == ["Build integrations"]
+    assert result.job.requirements == ["Python and TypeScript"]
+    assert result.extraction.status == "ready"
+
+
+def test_celonis_dynamic_job_url_uses_public_api_payload() -> None:
+    plan = plan_fetch("https://careers.celonis.com/join-us/open-positions/job-detail?jobId=7885744003")
+    assert plan.fetch_url == "https://dxp-api.celonis.com/v1/jobs/7885744003"
+    html = api_payload_to_html(plan, {
+        "title": "Working Student Corporate Law",
+        "groupedLocation": "Munich, Germany",
+        "description": "&lt;p&gt;&lt;strong&gt;The work you’ll do:&lt;/strong&gt;&lt;/p&gt;&lt;ul&gt;&lt;li&gt;Conduct legal research&lt;/li&gt;&lt;/ul&gt;&lt;p&gt;&lt;strong&gt;The qualifications you need:&lt;/strong&gt;&lt;/p&gt;&lt;ul&gt;&lt;li&gt;Enrolled in a law program&lt;/li&gt;&lt;/ul&gt;",
+    })
+    result = extract_vacancy(html, "https://careers.celonis.com/join-us/open-positions/job-detail?jobId=7885744003")
+    assert result.job.company == "Celonis"
+    assert result.job.responsibilities == ["Conduct legal research"]
+    assert result.job.requirements == ["Enrolled in a law program"]
+    assert result.extraction.status == "ready"
+
+
 def test_blocks_application_form_without_job_sections() -> None:
     html = """
     <html><head><title>Apply</title></head><body><main><h1>Apply for this job</h1>
@@ -141,3 +170,15 @@ def test_blocks_access_challenge_page() -> None:
     assert result.extraction.status == "failed"
     assert result.extraction.can_generate_cv is False
     assert result.extraction.field_confidence["requirements"] == 0
+
+
+def test_does_not_treat_ordinary_make_as_automation_tool() -> None:
+    html = """
+    <main><h1>Legal Working Student</h1><div class="company">Example</div>
+      <p>Help us make processes work for people and companies.</p>
+      <h2>The work you'll do</h2><ul><li>Conduct legal research and make recommendations.</li></ul>
+      <h2>The qualifications you need</h2><ul><li>Currently enrolled in law.</li><li>Excellent research skills.</li></ul>
+    </main>
+    """
+    result = extract_vacancy(html)
+    assert "Make" not in result.job.skills

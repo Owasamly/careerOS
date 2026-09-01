@@ -14,12 +14,12 @@ from .models import ContactPerson, ExtractionInfo, JobData, LanguageRequirement,
 
 SECTION_NAMES = {
     "responsibilities": (
-        "responsibilities", "what you will do", "what you'll do", "what you’ll do", "your tasks", "your mission", "the role", "duties",
+        "responsibilities", "what you will do", "what you'll do", "what you’ll do", "the work you'll do", "the work you’ll do", "your tasks", "your mission", "the role", "duties",
         "deine aufgaben", "ihre aufgaben", "aufgabenbereich", "das erwartet dich",
         "das erwartet sie", "was dich erwartet", "deine mission", "ihre mission", "tätigkeiten", "verantwortlichkeiten",
     ),
     "requirements": (
-        "requirements", "what you bring", "your profile", "qualifications", "must have",
+        "requirements", "what you bring", "your profile", "qualifications", "the qualifications you need", "you're a fit if", "you’re a fit if", "must have",
         "dein profil", "ihr profil", "das bringst du mit", "das bringen sie mit",
         "was du mitbringst", "anforderungen", "qualifikationen", "voraussetzungen",
     ),
@@ -155,7 +155,15 @@ def extract_sections(soup: BeautifulSoup) -> dict[str, list[str]]:
 
 def derive_skills(job: JobData) -> list[str]:
     searchable = " ".join([job.description, *job.responsibilities, *job.requirements, *job.nice_to_haves]).lower()
-    return [term.upper() if term in {"aws", "gcp", "iam", "sql", "siem", "ai"} else term.title() for term in SKILL_TERMS if re.search(rf"(?<!\w){re.escape(term)}(?!\w)", searchable)]
+    found: list[str] = []
+    for term in SKILL_TERMS:
+        if term == "make":
+            matched = bool(re.search(r"\bmake\.com\b|\bmake\s+(?:automation|workflow|integration)s?\b", searchable))
+        else:
+            matched = bool(re.search(rf"(?<!\w){re.escape(term)}(?!\w)", searchable))
+        if matched:
+            found.append(term.upper() if term in {"aws", "gcp", "iam", "sql", "siem", "ai"} else term.title())
+    return found
 
 
 def derive_languages(job: JobData, soup: BeautifulSoup) -> list[LanguageRequirement]:

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from html import escape
+from html import escape, unescape
 import re
 from typing import Any
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import parse_qs, urlparse, urlunparse
+
+from bs4 import BeautifulSoup
 
 
 @dataclass(frozen=True)
@@ -34,6 +36,11 @@ def plan_fetch(url: str) -> FetchPlan:
         job_id = parts[1] if parts[1] != "apply" else (parts[2] if len(parts) > 2 else "")
         return FetchPlan("ashby", f"https://api.ashbyhq.com/posting-api/job-board/{parts[0]}", "ashby_json", job_id, parts[0])
 
+    if host == "careers.celonis.com" and parsed.path.rstrip("/").endswith("/job-detail"):
+        job_id = (parse_qs(parsed.query).get("jobId") or [""])[0]
+        if job_id.isdigit():
+            return FetchPlan("celonis", f"https://dxp-api.celonis.com/v1/jobs/{job_id}", "celonis_json", job_id, "Celonis")
+
     greenhouse_hosts = {"boards.greenhouse.io", "job-boards.greenhouse.io"}
     if host in greenhouse_hosts and "jobs" in parts:
         index = parts.index("jobs")
@@ -46,6 +53,22 @@ def plan_fetch(url: str) -> FetchPlan:
 
 def _section(title: str, content: str) -> str:
     return f"<h2>{escape(title)}</h2>{content}" if content else ""
+
+
+def normalize_rich_sections(content: str) -> str:
+    soup = BeautifulSoup(unescape(content), "html.parser")
+    for paragraph in soup.find_all("p"):
+        strong = paragraph.find("strong", recursive=False)
+        if not strong:
+            continue
+        paragraph_text = " ".join(paragraph.get_text(" ", strip=True).split())
+        strong_text = " ".join(strong.get_text(" ", strip=True).split())
+        if paragraph_text.rstrip(":") != strong_text.rstrip(":"):
+            continue
+        heading = soup.new_tag("h2")
+        heading.string = strong_text.rstrip(":")
+        paragraph.replace_with(heading)
+    return str(soup)
 
 
 def lever_to_html(data: dict[str, Any], account: str) -> str:
@@ -76,7 +99,17 @@ def ashby_to_html(data: dict[str, Any], account: str, job_id: str) -> str:
         "</head><body><main>"
         f"<h1>{escape(str(job.get('title', '')))}</h1>"
         f'<div class="job-location">{escape(locations)}</div>'
-        f"{job.get('descriptionHtml', '')}"
+        f"{normalize_rich_sections(str(job.get('descriptionHtml', '')))}"
+        "</main></body></html>"
+    )
+
+
+def celonis_to_html(data: dict[str, Any]) -> str:
+    return (
+        "<html><head><meta name=\"application-name\" content=\"Celonis\"></head><body><main>"
+        f"<h1>{escape(str(data.get('title', '')))}</h1>"
+        f'<div class="job-location">{escape(str(data.get("groupedLocation", "")))}</div>'
+        f"{normalize_rich_sections(str(data.get('description', '')))}"
         "</main></body></html>"
     )
 
@@ -102,4 +135,6 @@ def api_payload_to_html(plan: FetchPlan, data: dict[str, Any]) -> str:
         return ashby_to_html(data, plan.account, plan.job_id)
     if plan.kind == "greenhouse_json":
         return greenhouse_to_html(data, plan.account)
+    if plan.kind == "celonis_json":
+        return celonis_to_html(data)
     raise ValueError(f"Unsupported ATS payload type: {plan.kind}")
