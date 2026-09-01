@@ -1,5 +1,5 @@
 from vacancy_extractor import extract_vacancy
-from vacancy_extractor.platforms import api_payload_to_html, personio_xml_to_html, plan_fetch
+from vacancy_extractor.platforms import api_payload_to_html, ashby_to_html, personio_xml_to_html, plan_fetch
 
 
 def test_extracts_jobposting_json_ld() -> None:
@@ -135,6 +135,35 @@ def test_ashby_strong_paragraph_labels_become_sections() -> None:
     assert result.job.responsibilities == ["Build integrations"]
     assert result.job.requirements == ["Python and TypeScript"]
     assert result.extraction.status == "ready"
+
+
+def test_ashby_plain_tasks_label_becomes_responsibilities() -> None:
+    html = ashby_to_html(
+        {
+            "jobs": [{
+                "title": "Working Student - Ecodesign",
+                "jobUrl": "https://jobs.ashbyhq.com/example/job-id",
+                "descriptionHtml": """
+                    <p>Tasks</p>
+                    <p>On a day-to-day basis, you'll be:</p>
+                    <ul><li>Improving our internal LCA tools.</li><li>Supporting AI agent integration.</li></ul>
+                    <p>Qualifications &amp; Background</p>
+                    <ul><li>Good Python skills.</li><li>Currently enrolled at a university.</li></ul>
+                """,
+            }]
+        },
+        "example",
+        "job-id",
+    )
+
+    result = extract_vacancy(html, "https://jobs.ashbyhq.com/example/job-id")
+
+    assert result.job.responsibilities == [
+        "On a day-to-day basis, you'll be:",
+        "Improving our internal LCA tools.",
+        "Supporting AI agent integration.",
+    ]
+    assert result.job.requirements == ["Good Python skills.", "Currently enrolled at a university."]
 
 
 def test_celonis_dynamic_job_url_uses_public_api_payload() -> None:

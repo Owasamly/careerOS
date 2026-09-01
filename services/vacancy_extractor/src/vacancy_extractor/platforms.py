@@ -65,14 +65,21 @@ def normalize_rich_sections(content: str) -> str:
     soup = BeautifulSoup(unescape(content), "html.parser")
     for paragraph in soup.find_all("p"):
         strong = paragraph.find("strong", recursive=False)
-        if not strong:
-            continue
         paragraph_text = " ".join(paragraph.get_text(" ", strip=True).split())
-        strong_text = " ".join(strong.get_text(" ", strip=True).split())
-        if paragraph_text.rstrip(":") != strong_text.rstrip(":"):
+        strong_text = " ".join(strong.get_text(" ", strip=True).split()) if strong else ""
+        is_strong_label = bool(strong_text) and paragraph_text.rstrip(":") == strong_text.rstrip(":")
+        # Ashby descriptions sometimes render section labels as an unstyled,
+        # standalone paragraph (for example, simply "Tasks") rather than a
+        # semantic heading or bold label.
+        is_plain_section_label = bool(re.fullmatch(
+            r"(?:key\s+)?(?:responsibilities(?:\s*/\s*tasks)?|tasks|duties|qualifications(?:\s*&\s*background)?|requirements|your\s+profile|nice\s+to\s+have)",
+            paragraph_text.rstrip(":").strip(),
+            re.I,
+        ))
+        if not is_strong_label and not is_plain_section_label:
             continue
         heading = soup.new_tag("h2")
-        heading.string = strong_text.rstrip(":")
+        heading.string = paragraph_text.rstrip(":")
         paragraph.replace_with(heading)
     return str(soup)
 
