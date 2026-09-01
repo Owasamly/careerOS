@@ -14,12 +14,12 @@ from .models import ContactPerson, ExtractionInfo, JobData, LanguageRequirement,
 
 SECTION_NAMES = {
     "responsibilities": (
-        "responsibilities", "what you will do", "what you'll do", "what you’ll do", "the work you'll do", "the work you’ll do", "more specifically, you will", "your role in our space mission", "your tasks", "tasks", "your mission", "the role", "duties",
+        "responsibilities", "what you will do", "what you'll do", "what you’ll do", "what you'll be doing", "what you’ll be doing", "the work you'll do", "the work you’ll do", "more specifically, you will", "your role in our space mission", "your tasks", "tasks", "your mission", "the role", "duties",
         "deine aufgaben", "ihre aufgaben", "aufgabenbereich", "das erwartet dich",
         "das erwartet sie", "was dich erwartet", "deine mission", "ihre mission", "tätigkeiten", "verantwortlichkeiten",
     ),
     "requirements": (
-        "requirements", "what you bring", "your profile", "qualifications", "qualification checklist", "the qualifications you need", "you're a fit if", "you’re a fit if", "must have",
+        "requirements", "what you bring", "your profile", "qualifications", "qualification checklist", "the qualifications you need", "qualities you'll need", "qualities you’ll need", "you're a fit if", "you’re a fit if", "must have",
         "dein profil", "ihr profil", "das bringst du mit", "das bringen sie mit",
         "was du mitbringst", "anforderungen", "qualifikationen", "voraussetzungen",
     ),

@@ -166,6 +166,23 @@ def test_ashby_plain_tasks_label_becomes_responsibilities() -> None:
     assert result.job.requirements == ["Good Python skills.", "Currently enrolled at a university."]
 
 
+def test_ashby_doing_and_qualities_headings_are_normalized() -> None:
+    html = """
+        <main>
+          <h1>IT Operations Working Student</h1>
+          <h2>WHAT YOU'LL BE DOING</h2>
+          <ul><li>Resolve day-to-day IT issues.</li><li>Manage user accounts.</li></ul>
+          <h2>THE QUALITIES YOU'LL NEED FOR A SUCCESSFUL CAREER AT DATAGUARD</h2>
+          <ul><li>You are currently studying IT.</li><li>You enjoy troubleshooting.</li></ul>
+        </main>
+    """
+
+    result = extract_vacancy(html, "https://jobs.ashbyhq.com/dataguard/job-id")
+
+    assert result.job.responsibilities == ["Resolve day-to-day IT issues.", "Manage user accounts."]
+    assert result.job.requirements == ["You are currently studying IT.", "You enjoy troubleshooting."]
+
+
 def test_celonis_dynamic_job_url_uses_public_api_payload() -> None:
     plan = plan_fetch("https://careers.celonis.com/join-us/open-positions/job-detail?jobId=7885744003")
     assert plan.fetch_url == "https://dxp-api.celonis.com/v1/jobs/7885744003"
