@@ -8,7 +8,7 @@ from pathlib import Path
 
 from .extractor import extract_vacancy
 from .models import ExtractRequest, VacancyDocument
-from .platforms import api_payload_to_html, plan_fetch
+from .platforms import api_payload_to_html, personio_xml_to_html, plan_fetch
 from .safety import UnsafeUrlError, validate_public_url
 
 app = FastAPI(title="Adapt My CV Vacancy Extractor", version="0.1.0")
@@ -50,6 +50,8 @@ async def fetch_html(url: str) -> tuple[str, str]:
                 raise HTTPException(status_code=413, detail="The vacancy response exceeds 3 MB.")
             if plan.kind != "html":
                 try:
+                    if plan.kind == "personio_xml":
+                        return personio_xml_to_html(response.content.decode("utf-8"), plan), original_url
                     return api_payload_to_html(plan, response.json()), original_url
                 except (ValueError, TypeError) as exc:
                     raise HTTPException(status_code=422, detail=str(exc)) from exc

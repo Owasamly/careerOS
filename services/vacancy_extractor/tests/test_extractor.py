@@ -1,5 +1,5 @@
 from vacancy_extractor import extract_vacancy
-from vacancy_extractor.platforms import api_payload_to_html, plan_fetch
+from vacancy_extractor.platforms import api_payload_to_html, personio_xml_to_html, plan_fetch
 
 
 def test_extracts_jobposting_json_ld() -> None:
@@ -231,3 +231,31 @@ def test_language_levels_and_required_flags_use_local_clause() -> None:
     assert languages["English"].required is True
     assert languages["German"].level == "Not specified"
     assert languages["German"].required is False
+
+
+def test_styled_div_headlines_are_used_as_sections() -> None:
+    html = """
+    <main><h1>Working Student AI Engineering</h1><div class="company">appliedAI</div>
+      <div class="content"><div class="headline display-2">Deine Aufgaben</div><div class="body prose"><p>Support AI engineering projects.</p><ul><li>Build Python workflows</li></ul></div></div>
+      <div class="content"><div class="headline display-2">Dein Profil</div><div class="body prose"><ul><li>Currently enrolled in Computer Science</li><li>German and English proficiency</li></ul></div></div>
+    </main>
+    """
+    result = extract_vacancy(html)
+    assert result.job.responsibilities == ["Build Python workflows"]
+    assert result.job.requirements == ["Currently enrolled in Computer Science", "German and English proficiency"]
+    assert result.extraction.status == "ready"
+
+
+def test_croz_personio_jobchat_uses_public_xml_prompts() -> None:
+    plan = plan_fetch("https://crozdach.jobs.personio.de/job/2069751?language=de")
+    assert plan.kind == "personio_xml"
+    xml = """<?xml version="1.0"?><workzag-jobs><position><id>2069751</id><subcompany>CROZ DACH GmbH</subcompany><office>München</office><name>Working Student DevOps</name><jobDescriptions><jobDescription><name>Unser JobChat</name><value><![CDATA[Katy: Bei welchen Aufgaben genau könntest du Hilfe gebrauchen?<br>Berni: Bei Recherchen zu Cloud-Anbietern und beim Testen von Tools.<br>Katy: Brauchen sie bestimmte Fähigkeiten oder Sprachkenntnisse?<br>Berni: Flüssiges Englisch ist ein Muss und Deutsch auf B1 ist erforderlich.]]></value></jobDescription></jobDescriptions></position></workzag-jobs>"""
+    html = personio_xml_to_html(xml, plan)
+    result = extract_vacancy(html)
+    assert result.job.company == "CROZ DACH GmbH"
+    assert result.job.responsibilities == ["Berni: Bei Recherchen zu Cloud-Anbietern und beim Testen von Tools."]
+    assert result.job.requirements == ["Berni: Flüssiges Englisch ist ein Muss und Deutsch auf B1 ist erforderlich."]
+    languages = {item.language: item for item in result.job.languages}
+    assert languages["English"].level == "Fluent"
+    assert languages["German"].level == "B1"
+    assert result.extraction.status == "ready"

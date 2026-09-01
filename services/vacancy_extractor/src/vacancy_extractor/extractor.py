@@ -49,7 +49,7 @@ LANGUAGE_TERMS = {
 LEVEL_PATTERNS = (
     (r"\b(c2|c1|b2|b1|a2|a1)\b", lambda match: match.group(1).upper()),
     (r"\b(native|mother tongue|muttersprach\w*)\b", lambda _: "Native"),
-    (r"\b(fluent|fluency|fließend\w*|fliessend\w*|verhandlungssicher\w*)\b", lambda _: "Fluent"),
+    (r"\b(fluent|fluency|fließend\w*|fliessend\w*|flüssig\w*|verhandlungssicher\w*)\b", lambda _: "Fluent"),
     (r"\b(professional|business fluent|geschäftssicher\w*|gute\w* kenntnisse|very good)\b", lambda _: "Professional"),
     (r"\b(basic|grundkenntnisse)\b", lambda _: "Basic"),
 )
@@ -132,7 +132,8 @@ def salary_from_json_ld(value: Any) -> str | None:
 
 def extract_sections(soup: BeautifulSoup) -> dict[str, list[str]]:
     sections = {key: [] for key in SECTION_NAMES}
-    for heading in soup.find_all(re.compile(r"^h[1-6]$")):
+    headings = [*soup.find_all(re.compile(r"^h[1-6]$")), *soup.select(".headline")]
+    for heading in headings:
         heading_text = clean_text(heading.get_text(" ", strip=True)).lower()
         target = next((key for key, names in SECTION_NAMES.items() if any(name in heading_text for name in names)), None)
         if not target:
@@ -182,7 +183,7 @@ def derive_languages(job: JobData, soup: BeautifulSoup) -> list[LanguageRequirem
         for term, language in LANGUAGE_TERMS.items():
             if not re.search(rf"(?<!\w){re.escape(term)}(?!\w)", lowered):
                 continue
-            clauses = [part.strip() for part in re.split(r"(?<=[.!?;])\s+|\s+[–—]\s+", lowered) if part.strip()]
+            clauses = [part.strip() for part in re.split(r"(?<=[.!?;])\s+|\s+[–—]\s+|\s+(?:and|und|sowie)\s+", lowered) if part.strip()]
             local = next((part for part in clauses if re.search(rf"(?<!\w){re.escape(term)}(?!\w)", part)), lowered)
             level = "Not specified"
             cefr_levels = set(re.findall(r"\b(?:c2|c1|b2|b1|a2|a1)\b", local, re.I))

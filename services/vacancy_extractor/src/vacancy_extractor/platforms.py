@@ -5,6 +5,7 @@ from html import escape, unescape
 import re
 from typing import Any
 from urllib.parse import parse_qs, urlparse, urlunparse
+from xml.etree import ElementTree
 
 from bs4 import BeautifulSoup
 
@@ -26,7 +27,12 @@ def plan_fetch(url: str) -> FetchPlan:
     if ".jobs.personio." in host:
         # Personio's /apply page contains the form, not the vacancy description.
         path = re.sub(r"(/job/[^/]+)/apply/?$", r"\1", parsed.path, flags=re.I)
-        return FetchPlan("personio", urlunparse(parsed._replace(path=path)), account=host.split(".jobs.personio.", 1)[0])
+        account = host.split(".jobs.personio.", 1)[0]
+        job_match = re.search(r"/job/(\d+)", path, re.I)
+        if account == "crozdach" and job_match:
+            language = (parse_qs(parsed.query).get("language") or ["de"])[0]
+            return FetchPlan("personio", f"{parsed.scheme}://{host}/xml?language={language}", "personio_xml", job_match.group(1), account)
+        return FetchPlan("personio", urlunparse(parsed._replace(path=path)), account=account)
 
     if host in {"jobs.lever.co", "jobs.eu.lever.co"} and len(parts) >= 2:
         region = "api.eu.lever.co" if host == "jobs.eu.lever.co" else "api.lever.co"
@@ -110,6 +116,42 @@ def celonis_to_html(data: dict[str, Any]) -> str:
         f"<h1>{escape(str(data.get('title', '')))}</h1>"
         f'<div class="job-location">{escape(str(data.get("groupedLocation", "")))}</div>'
         f"{normalize_rich_sections(str(data.get('description', '')))}"
+        "</main></body></html>"
+    )
+
+
+def personio_xml_to_html(content: str, plan: FetchPlan) -> str:
+    root = ElementTree.fromstring(content)
+    position = next((item for item in root.findall("position") if (item.findtext("id") or "") == plan.job_id), None)
+    if position is None:
+        raise ValueError("The vacancy was not found in the public Personio XML feed.")
+    descriptions = position.findall("./jobDescriptions/jobDescription")
+    rich_description = "".join((item.findtext("value") or "") for item in descriptions)
+    soup = BeautifulSoup(rich_description, "html.parser")
+    for line_break in soup.find_all("br"):
+        line_break.replace_with("\n")
+    lines = [" ".join(line.split()) for line in soup.get_text(" ", strip=False).splitlines() if line.strip()]
+
+    def answer_after(pattern: str) -> str:
+        for index, line in enumerate(lines[:-1]):
+            if re.search(pattern, line, re.I):
+                return lines[index + 1]
+        return ""
+
+    responsibilities = answer_after(r"(?:welchen|welche|bei welchen).*aufgaben|aufgaben.*(?:hilfe|unterstützung)")
+    requirements = answer_after(r"fähigkeiten|sprachkenntnisse|vorkenntnisse|voraussetzungen|anforderungen")
+    known_companies = {"crozdach": "CROZ DACH GmbH"}
+    company = position.findtext("subcompany") or known_companies.get(plan.account) or plan.account.replace("-", " ").title()
+    offices = [position.findtext("office") or "", *[item.text or "" for item in position.findall("./additionalOffices/office")]]
+    return (
+        "<html><head><meta charset=\"utf-8\">"
+        f'<meta name="application-name" content="{escape(company)}">'
+        "</head><body><main>"
+        f"<h1>{escape(position.findtext('name') or '')}</h1>"
+        f'<div class="job-location">{escape(" / ".join(filter(None, offices)))}</div>'
+        f"<div>{rich_description}</div>"
+        f"{_section('Responsibilities', f'<p>{escape(responsibilities)}</p>' if responsibilities else '')}"
+        f"{_section('Requirements', f'<p>{escape(requirements)}</p>' if requirements else '')}"
         "</main></body></html>"
     )
 
