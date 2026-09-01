@@ -14,12 +14,12 @@ from .models import ContactPerson, ExtractionInfo, JobData, LanguageRequirement,
 
 SECTION_NAMES = {
     "responsibilities": (
-        "responsibilities", "what you will do", "what you'll do", "what you’ll do", "the work you'll do", "the work you’ll do", "your tasks", "your mission", "the role", "duties",
+        "responsibilities", "what you will do", "what you'll do", "what you’ll do", "the work you'll do", "the work you’ll do", "more specifically, you will", "your role in our space mission", "your tasks", "tasks", "your mission", "the role", "duties",
         "deine aufgaben", "ihre aufgaben", "aufgabenbereich", "das erwartet dich",
         "das erwartet sie", "was dich erwartet", "deine mission", "ihre mission", "tätigkeiten", "verantwortlichkeiten",
     ),
     "requirements": (
-        "requirements", "what you bring", "your profile", "qualifications", "the qualifications you need", "you're a fit if", "you’re a fit if", "must have",
+        "requirements", "what you bring", "your profile", "qualifications", "qualification checklist", "the qualifications you need", "you're a fit if", "you’re a fit if", "must have",
         "dein profil", "ihr profil", "das bringst du mit", "das bringen sie mit",
         "was du mitbringst", "anforderungen", "qualifikationen", "voraussetzungen",
     ),
@@ -182,17 +182,20 @@ def derive_languages(job: JobData, soup: BeautifulSoup) -> list[LanguageRequirem
         for term, language in LANGUAGE_TERMS.items():
             if not re.search(rf"(?<!\w){re.escape(term)}(?!\w)", lowered):
                 continue
+            clauses = [part.strip() for part in re.split(r"(?<=[.!?;])\s+|\s+[–—]\s+", lowered) if part.strip()]
+            local = next((part for part in clauses if re.search(rf"(?<!\w){re.escape(term)}(?!\w)", part)), lowered)
             level = "Not specified"
-            cefr_levels = set(re.findall(r"\b(?:c2|c1|b2|b1|a2|a1)\b", lowered, re.I))
+            cefr_levels = set(re.findall(r"\b(?:c2|c1|b2|b1|a2|a1)\b", local, re.I))
             if len(cefr_levels) == 1:
                 level = next(iter(cefr_levels)).upper()
             elif not cefr_levels:
                 for pattern, formatter in LEVEL_PATTERNS[1:]:
-                    match = re.search(pattern, lowered, re.I)
+                    match = re.search(pattern, local, re.I)
                     if match:
                         level = formatter(match)
                         break
-            required = evidence in job.requirements or bool(re.search(r"\b(required|must|erforderlich|vorausgesetzt|zwingend)\b", lowered))
+            explicitly_optional = bool(re.search(r"\b(?:isn't|is not|not) required\b|\boptional\b|\bnice to have\b|\bhelps?\b|\bvon vorteil\b|\bwünschenswert\b", local))
+            required = not explicitly_optional and (evidence in job.requirements or bool(re.search(r"\b(required|must|erforderlich|vorausgesetzt|zwingend)\b", local)))
             candidate = LanguageRequirement(language=language, level=level, evidence=evidence, required=required)
             current = found.get(language)
             if not current or (current.level == "Not specified" and level != "Not specified") or (required and not current.required):
@@ -299,7 +302,13 @@ def extract_vacancy(html: str, source_url: str | None = None) -> VacancyDocument
 
     sections = extract_sections(soup)
     if structured:
-        description = clean_text(structured.get("description"))
+        raw_description = unescape(str(structured.get("description") or ""))
+        description_soup = BeautifulSoup(raw_description, "html.parser")
+        description_sections = extract_sections(description_soup)
+        for section_name in sections:
+            if not sections[section_name]:
+                sections[section_name] = description_sections[section_name]
+        description = clean_text(raw_description)
         job = JobData(
             title=clean_text(structured.get("title")),
             company=organization_name(structured.get("hiringOrganization")),

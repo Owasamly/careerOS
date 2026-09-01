@@ -182,3 +182,52 @@ def test_does_not_treat_ordinary_make_as_automation_tool() -> None:
     """
     result = extract_vacancy(html)
     assert "Make" not in result.job.skills
+
+
+def test_eu_greenhouse_url_uses_api_and_decodes_rich_sections() -> None:
+    plan = plan_fetch("https://job-boards.eu.greenhouse.io/isaraerospace/jobs/4931908101")
+    assert plan.kind == "greenhouse_json"
+    assert plan.fetch_url == "https://boards-api.greenhouse.io/v1/boards/isaraerospace/jobs/4931908101?content=true"
+    html = api_payload_to_html(plan, {
+        "title": "Working Student Computer Science",
+        "company_name": "Isar Aerospace SE",
+        "location": {"name": "Ottobrunn, Germany"},
+        "content": "&lt;p&gt;&lt;strong&gt;Your Role in Our Space Mission:&lt;/strong&gt;&lt;/p&gt;&lt;ul&gt;&lt;li&gt;Implement software features&lt;/li&gt;&lt;/ul&gt;&lt;p&gt;&lt;strong&gt;Qualification Checklist&lt;/strong&gt;&lt;/p&gt;&lt;ul&gt;&lt;li&gt;Enrolled in Computer Science&lt;/li&gt;&lt;/ul&gt;",
+    })
+    result = extract_vacancy(html)
+    assert result.job.company == "Isar Aerospace SE"
+    assert result.job.responsibilities == ["Implement software features"]
+    assert result.job.requirements == ["Enrolled in Computer Science"]
+    assert result.extraction.status == "ready"
+
+
+def test_json_ld_description_sections_are_parsed_for_join_style_pages() -> None:
+    html = """
+    <html><head><script type="application/ld+json">
+    {
+      "@context": "https://schema.org", "@type": "JobPosting",
+      "title": "Founding AI Engineer",
+      "hiringOrganization": {"name": "Alago"},
+      "description": "&lt;h2&gt;Tasks&lt;/h2&gt;&lt;p&gt;Build production AI systems.&lt;/p&gt;&lt;h2&gt;Requirements&lt;/h2&gt;&lt;p&gt;Strong TypeScript and React skills.&lt;/p&gt;"
+    }
+    </script></head></html>
+    """
+    result = extract_vacancy(html, "https://join.com/companies/alagoai/example")
+    assert result.job.responsibilities == ["Build production AI systems."]
+    assert result.job.requirements == ["Strong TypeScript and React skills."]
+    assert result.extraction.status == "ready"
+
+
+def test_language_levels_and_required_flags_use_local_clause() -> None:
+    html = """
+    <main><h1>Engineer</h1><div class="company">Example</div>
+      <h2>Tasks</h2><p>Build reliable systems.</p><p>Support customers.</p>
+      <h2>Requirements</h2><p>We work in English. German helps for customer calls but isn't required. We have native speakers for that.</p>
+    </main>
+    """
+    result = extract_vacancy(html)
+    languages = {item.language: item for item in result.job.languages}
+    assert languages["English"].level == "Not specified"
+    assert languages["English"].required is True
+    assert languages["German"].level == "Not specified"
+    assert languages["German"].required is False

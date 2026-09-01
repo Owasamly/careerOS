@@ -41,7 +41,7 @@ def plan_fetch(url: str) -> FetchPlan:
         if job_id.isdigit():
             return FetchPlan("celonis", f"https://dxp-api.celonis.com/v1/jobs/{job_id}", "celonis_json", job_id, "Celonis")
 
-    greenhouse_hosts = {"boards.greenhouse.io", "job-boards.greenhouse.io"}
+    greenhouse_hosts = {"boards.greenhouse.io", "job-boards.greenhouse.io", "job-boards.eu.greenhouse.io"}
     if host in greenhouse_hosts and "jobs" in parts:
         index = parts.index("jobs")
         if index > 0 and len(parts) > index + 1:
@@ -116,14 +116,14 @@ def celonis_to_html(data: dict[str, Any]) -> str:
 
 def greenhouse_to_html(data: dict[str, Any], account: str) -> str:
     location = (data.get("location") or {}).get("name", "")
-    company = account.replace("-", " ").title()
+    company = str(data.get("company_name") or account.replace("-", " ").title())
     return (
         "<html><head>"
         f'<meta name="application-name" content="{escape(company)}">'
         "</head><body><main>"
         f"<h1>{escape(str(data.get('title', '')))}</h1>"
         f'<div class="job-location">{escape(str(location))}</div>'
-        f"{data.get('content', '')}"
+        f"{normalize_rich_sections(str(data.get('content', '')))}"
         "</main></body></html>"
     )
 
