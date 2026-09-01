@@ -145,8 +145,20 @@ def personio_xml_to_html(content: str, plan: FetchPlan) -> str:
                 return lines[index + 1]
         return ""
 
-    responsibilities = answer_after(r"(?:welchen|welche|bei welchen).*aufgaben|aufgaben.*(?:hilfe|unterstützung)")
-    requirements = answer_after(r"fähigkeiten|sprachkenntnisse|vorkenntnisse|voraussetzungen|anforderungen")
+    def dialogue_items(answer: str) -> list[str]:
+        answer = re.sub(r"^[^:]{1,40}:\s*", "", answer).strip(" „“\"'")
+        sentences = [item.strip(" „“\"'") for item in re.split(r"(?<=[.!?])\s+(?=[A-ZÄÖÜ])", answer)]
+        filler = (
+            r"^bei verschiedenen dingen[.!?]*$",
+            r"^das (?:wäre|waere) .* (?:interessant|spannend)[.!?]*$",
+        )
+        return [item for item in sentences if item and not any(re.search(pattern, item, re.I) for pattern in filler)]
+
+    def item_list(items: list[str]) -> str:
+        return "<ul>" + "".join(f"<li>{escape(item)}</li>" for item in items) + "</ul>" if items else ""
+
+    responsibilities = dialogue_items(answer_after(r"(?:welchen|welche|bei welchen).*aufgaben|aufgaben.*(?:hilfe|unterstützung)"))
+    requirements = dialogue_items(answer_after(r"fähigkeiten|sprachkenntnisse|vorkenntnisse|voraussetzungen|anforderungen"))
     known_companies = {"crozdach": "CROZ DACH GmbH"}
     company = position.findtext("subcompany") or known_companies.get(plan.account) or plan.account.replace("-", " ").title()
     offices = [position.findtext("office") or "", *[item.text or "" for item in position.findall("./additionalOffices/office")]]
@@ -157,8 +169,8 @@ def personio_xml_to_html(content: str, plan: FetchPlan) -> str:
         f"<h1>{escape(position.findtext('name') or '')}</h1>"
         f'<div class="job-location">{escape(" / ".join(filter(None, offices)))}</div>'
         f"<div>{rich_description}</div>"
-        f"{_section('Responsibilities', f'<p>{escape(responsibilities)}</p>' if responsibilities else '')}"
-        f"{_section('Requirements', f'<p>{escape(requirements)}</p>' if requirements else '')}"
+        f"{_section('Responsibilities', item_list(responsibilities))}"
+        f"{_section('Requirements', item_list(requirements))}"
         "</main></body></html>"
     )
 

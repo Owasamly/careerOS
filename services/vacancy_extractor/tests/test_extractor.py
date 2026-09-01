@@ -295,12 +295,12 @@ def test_styled_div_headlines_are_used_as_sections() -> None:
 def test_croz_personio_jobchat_uses_public_xml_prompts() -> None:
     plan = plan_fetch("https://crozdach.jobs.personio.de/job/2069751?language=de")
     assert plan.kind == "personio_xml"
-    xml = """<?xml version="1.0"?><workzag-jobs><position><id>2069751</id><subcompany>CROZ DACH GmbH</subcompany><office>München</office><name>Working Student DevOps</name><jobDescriptions><jobDescription><name>Unser JobChat</name><value><![CDATA[Katy: Bei welchen Aufgaben genau könntest du Hilfe gebrauchen?<br>Berni: Bei Recherchen zu Cloud-Anbietern und beim Testen von Tools.<br>Katy: Brauchen sie bestimmte Fähigkeiten oder Sprachkenntnisse?<br>Berni: Flüssiges Englisch ist ein Muss und Deutsch auf B1 ist erforderlich.]]></value></jobDescription></jobDescriptions></position></workzag-jobs>"""
+    xml = """<?xml version="1.0"?><workzag-jobs><position><id>2069751</id><subcompany>CROZ DACH GmbH</subcompany><office>München</office><name>Working Student DevOps</name><jobDescriptions><jobDescription><name>Unser JobChat</name><value><![CDATA[Katy: Bei welchen Aufgaben genau könntest du Hilfe gebrauchen?<br>Berni: Bei verschiedenen Dingen! Recherchen zu Cloud-Anbietern und Testen von Tools. Außerdem Mitarbeit am DevOps-Lehrplan. Das wäre für Studierende super interessant.<br>Katy: Brauchen sie bestimmte Fähigkeiten oder Sprachkenntnisse?<br>Berni: Flüssiges Englisch ist ein Muss. Deutsch auf B1 ist ebenfalls erforderlich.]]></value></jobDescription></jobDescriptions></position></workzag-jobs>"""
     html = personio_xml_to_html(xml, plan)
     result = extract_vacancy(html)
     assert result.job.company == "CROZ DACH GmbH"
-    assert result.job.responsibilities == ["Berni: Bei Recherchen zu Cloud-Anbietern und beim Testen von Tools."]
-    assert result.job.requirements == ["Berni: Flüssiges Englisch ist ein Muss und Deutsch auf B1 ist erforderlich."]
+    assert result.job.responsibilities == ["Recherchen zu Cloud-Anbietern und Testen von Tools.", "Außerdem Mitarbeit am DevOps-Lehrplan."]
+    assert result.job.requirements == ["Flüssiges Englisch ist ein Muss.", "Deutsch auf B1 ist ebenfalls erforderlich."]
     languages = {item.language: item for item in result.job.languages}
     assert languages["English"].level == "Fluent"
     assert languages["German"].level == "B1"
