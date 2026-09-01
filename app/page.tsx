@@ -102,6 +102,7 @@ export default function Home() {
   const [pages, setPages] = useState('2 pages');
   const [reviewOpen, setReviewOpen] = useState(false);
   const [report, setReport] = useState<MappingReport | null>(null);
+  const [reviewApproved, setReviewApproved] = useState(false);
   const [generating, setGenerating] = useState(false);
 
   const bothValid = useMemo(() => {
@@ -109,6 +110,26 @@ export default function Home() {
   }, [profile, vacancy]);
 
   const extractionAllowsGeneration = !extraction || extraction.can_generate_cv;
+  const vacancySnapshot = useMemo(() => {
+    try {
+      const parsed = JSON.parse(vacancy) as Record<string, unknown>;
+      const job = ((parsed.job && typeof parsed.job === 'object' ? parsed.job : parsed) ?? {}) as Record<string, unknown>;
+      const count = (value: unknown) => Array.isArray(value) ? value.length : 0;
+      return {
+        title: typeof job.title === 'string' ? job.title : '',
+        company: typeof job.company === 'string' ? job.company : '',
+        responsibilities: count(job.responsibilities),
+        requirements: count(job.requirements),
+        niceToHaves: count(job.nice_to_haves ?? job.niceToHaves),
+        skills: count(job.skills),
+      };
+    } catch { return null; }
+  }, [vacancy]);
+
+  const invalidateReview = () => {
+    setReport(null);
+    setReviewApproved(false);
+  };
 
   const extractVacancy = async () => {
     if (!jobUrl.trim()) return;
@@ -124,6 +145,7 @@ export default function Home() {
       if (!response.ok) throw new Error(data.detail || 'The vacancy could not be extracted.');
       if (!data.job || !data.extraction) throw new Error('The extractor returned an invalid response.');
       setVacancy(JSON.stringify(data, null, 2));
+      invalidateReview();
       setVacancyMode('paste');
       setExtraction(data.extraction);
       setActiveStep('vacancy');
@@ -135,6 +157,7 @@ export default function Home() {
   const reviewMapping = () => {
     try {
       setReport(mapInputs(JSON.parse(profile), JSON.parse(vacancy)));
+      setReviewApproved(false);
       setReviewOpen(true);
     } catch {
       setReport(null);
@@ -142,7 +165,7 @@ export default function Home() {
   };
 
   const generatePdf = async () => {
-    if (!report) return;
+    if (!report || !reviewApproved) return;
     setGenerating(true);
     try {
       const { downloadResumePdf } = await import('./resume-pdf');
@@ -199,9 +222,20 @@ export default function Home() {
           </section>
 
           <div className="input-grid">
-            <JsonInput label="Candidate profile" description="The source of truth. Keep every role, project, skill and achievement here." value={profile} setValue={setProfile} mode={profileMode} setMode={setProfileMode} placeholder="Paste your canonical profile JSON" />
-            <JsonInput label="Job vacancy" description="Use structured fields for responsibilities, requirements and nice-to-haves." value={vacancy} setValue={(value) => { setVacancy(value); setExtraction(null); }} mode={vacancyMode} setMode={setVacancyMode} placeholder="Paste the structured vacancy JSON" />
+            <JsonInput label="Candidate profile" description="The source of truth. Keep every role, project, skill and achievement here." value={profile} setValue={(value) => { setProfile(value); invalidateReview(); }} mode={profileMode} setMode={setProfileMode} placeholder="Paste your canonical profile JSON" />
+            <JsonInput label="Job vacancy" description="Use structured fields for responsibilities, requirements and nice-to-haves." value={vacancy} setValue={(value) => { setVacancy(value); setExtraction(null); invalidateReview(); }} mode={vacancyMode} setMode={setVacancyMode} placeholder="Paste the structured vacancy JSON" />
           </div>
+
+          {vacancySnapshot && <section className="vacancy-review-card" aria-label="Vacancy review summary">
+            <div className="vacancy-review-heading"><div><p className="eyebrow accent">Vacancy review</p><h2>{vacancySnapshot.title || 'Untitled vacancy'}</h2><p>{vacancySnapshot.company || 'Company not identified'}</p></div><span className="review-required">Review required</span></div>
+            <div className="vacancy-facts">
+              <div className={vacancySnapshot.responsibilities ? 'complete' : 'missing'}><strong>{vacancySnapshot.responsibilities}</strong><span>Responsibilities</span></div>
+              <div className={vacancySnapshot.requirements ? 'complete' : 'missing'}><strong>{vacancySnapshot.requirements}</strong><span>Requirements</span></div>
+              <div><strong>{vacancySnapshot.niceToHaves}</strong><span>Nice-to-haves</span></div>
+              <div><strong>{vacancySnapshot.skills}</strong><span>Detected skills</span></div>
+            </div>
+            <p className="vacancy-review-note">Confirm these counts and edit the vacancy JSON if anything was classified incorrectly. Mapping creates a fresh evidence report from the current inputs.</p>
+          </section>}
 
           <section className="rules-card">
             <div className="card-heading"><div><p className="eyebrow">Tailoring rules</p><p className="card-description">Control how much changes and what the output must respect.</p></div><span className="optional">Optional</span></div>
@@ -219,7 +253,7 @@ export default function Home() {
 
           <div className="action-row">
             <div className="readiness"><span className={bothValid && extractionAllowsGeneration ? 'ready-light' : 'ready-light off'} />{!bothValid ? 'Fix JSON issues before continuing' : !extractionAllowsGeneration ? 'Extraction blockers must be fixed first' : extraction?.status === 'needs_review' ? 'Review the extracted vacancy carefully' : 'Inputs are ready for review'}</div>
-            <button className="primary-button" disabled={!bothValid || !extractionAllowsGeneration} onClick={reviewMapping}>Validate &amp; map fields <span>→</span></button>
+            <button className="primary-button" disabled={!bothValid || !extractionAllowsGeneration} onClick={reviewMapping}>Review &amp; tailor <span>→</span></button>
           </div>
         </section>
 
@@ -241,17 +275,18 @@ export default function Home() {
         <div className="modal-backdrop" role="presentation" onClick={() => setReviewOpen(false)}>
           <section className="review-modal" role="dialog" aria-modal="true" aria-labelledby="review-title" onClick={(event) => event.stopPropagation()}>
             <button className="close-button" aria-label="Close review" onClick={() => setReviewOpen(false)}>×</button>
-            <p className="eyebrow accent">Deterministic mapping report</p><h2 id="review-title">Review before generating.</h2>
+            <p className="eyebrow accent">Review and tailor</p><h2 id="review-title">Approve the evidence, then generate.</h2>
             <p>No content was invented or rewritten. Known fields were extracted and vacancy terms were used only to rank existing skills and projects.</p>
-            <dl><div><dt>Mapped</dt><dd>{report?.mapped.length ?? 0} groups</dd></div><div><dt>Warnings</dt><dd>{report?.warnings.length ?? 0}</dd></div><div><dt>Renderer</dt><dd>Local React PDF</dd></div></dl>
+            <dl><div><dt>Coverage</dt><dd>{report?.coveragePercent ?? 0}%</dd></div><div><dt>Warnings</dt><dd>{report?.warnings.length ?? 0}</dd></div><div><dt>Renderer</dt><dd>Local React PDF</dd></div></dl>
             {report && <div className="mapping-report">
               <div className="coverage-summary"><strong>Requirement coverage</strong><p><span className="coverage matched">✓ {report.coverageSummary.matched} matched</span><span className="coverage partial">△ {report.coverageSummary.partial} partial</span><span className="coverage unsupported">× {report.coverageSummary.unsupported} unsupported</span></p></div>
-              {!!report.coverage.length && <div><strong>Evidence report</strong><ul>{report.coverage.map((item, index) => <li className={`coverage-item ${item.status}`} key={`${item.requirement}-${index}`}><b>{item.status === 'matched' ? '✓' : item.status === 'partial' ? '△' : '×'} {item.requirement}</b>{item.evidence.length ? <small>{item.evidence.map((match) => `${match.id} (${match.matchedTerms.join(', ')})`).join(' · ')}</small> : <small>No supporting evidence found in the master profile.</small>}</li>)}</ul></div>}
+              {!!report.coverage.length && <div><strong>Evidence report</strong><ul>{report.coverage.map((item, index) => <li className={`coverage-item ${item.status}`} key={`${item.requirement}-${index}`}><span className="evidence-source">{item.source.replaceAll('_', ' ')}</span><b>{item.status === 'matched' ? '✓' : item.status === 'partial' ? '△' : '×'} {item.requirement}</b>{item.evidence.length ? <small>{item.evidence.map((match) => `${match.label || match.id} · ${match.id} (${match.matchedTerms.join(', ')})`).join(' · ')}</small> : <small>No supporting evidence found in the master profile.</small>}</li>)}</ul></div>}
               <div><strong>Mapped successfully</strong><ul>{report.mapped.map((item) => <li key={item}>✓ {item}</li>)}</ul></div>
               <div><strong>Warnings</strong>{report.warnings.length ? <ul>{report.warnings.map((item) => <li key={item}>! {item}</li>)}</ul> : <p>No blocking warnings.</p>}</div>
               {!!report.ignored.length && <div><strong>Ignored top-level fields</strong><p>{report.ignored.join(', ')}</p></div>}
             </div>}
-            <div className="modal-actions"><button className="text-button" onClick={downloadJson}>Download mapped JSON</button><button className="primary-button" disabled={!report || generating} onClick={generatePdf}>{generating ? 'Generating…' : 'Generate PDF'}</button></div>
+            <label className="approval-check"><input type="checkbox" checked={reviewApproved} onChange={(event) => setReviewApproved(event.target.checked)} /><span><strong>I reviewed the vacancy and evidence report.</strong><small>I understand unsupported requirements are excluded rather than added to my CV.</small></span></label>
+            <div className="modal-actions"><button className="text-button" onClick={downloadJson}>Download mapped JSON</button><button className="primary-button" disabled={!report || !reviewApproved || generating} onClick={generatePdf}>{generating ? 'Generating…' : 'Generate approved PDF'}</button></div>
           </section>
         </div>
       )}

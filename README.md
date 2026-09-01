@@ -19,6 +19,10 @@ API is connected.
 - Use Reactive Resume as the intended PDF renderer.
 - Match vacancy requirements to tagged candidate evidence without inventing claims.
 - Review matched, partial, and unsupported requirements before PDF generation.
+- Show a structured vacancy summary and invalidate stale mapping reports whenever
+  either JSON input changes.
+- Require explicit approval of the vacancy and evidence report before PDF
+  generation is enabled.
 
 ## Candidate source of truth
 

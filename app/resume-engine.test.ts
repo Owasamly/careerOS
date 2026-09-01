@@ -42,13 +42,16 @@ test('classifies matched, partial, and unsupported requirements with traceable e
   const byRequirement = Object.fromEntries(report.coverage.map((item) => [item.requirement, item]));
 
   assert.equal(byRequirement['AWS cloud security monitoring experience'].status, 'matched');
+  assert.equal(byRequirement['AWS cloud security monitoring experience'].source, 'requirement');
   assert.ok(byRequirement['AWS cloud security monitoring experience'].evidence.some((item) => item.id === 'skill-cloud'));
   assert.ok(byRequirement['AWS cloud security monitoring experience'].evidence.some((item) => item.id === 'experience-cloud-alerts'));
   assert.equal(byRequirement['Terraform and Pulumi production experience'].status, 'partial');
   assert.equal(byRequirement['Production Kubernetes administration'].status, 'unsupported');
   assert.equal(byRequirement['Production Kubernetes administration'].evidence.length, 0);
   assert.equal(byRequirement['Automate security checks using Python'].status, 'matched');
+  assert.equal(byRequirement['Automate security checks using Python'].source, 'responsibility');
   assert.deepEqual(report.coverageSummary, { matched: 2, partial: 1, unsupported: 1 });
+  assert.equal(report.coveragePercent, 63);
 });
 
 test('ranks supported experience evidence without changing its factual text', () => {

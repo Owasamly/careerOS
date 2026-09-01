@@ -17,6 +17,7 @@ export type MappingReport = {
   vacancyTerms: string[];
   coverage: RequirementCoverage[];
   coverageSummary: { matched: number; partial: number; unsupported: number };
+  coveragePercent: number;
 };
 
 export type EvidenceMatch = {
@@ -29,10 +30,13 @@ export type EvidenceMatch = {
 
 export type RequirementCoverage = {
   requirement: string;
+  source: 'requirement' | 'responsibility' | 'nice_to_have';
   status: 'matched' | 'partial' | 'unsupported';
   score: number;
   evidence: EvidenceMatch[];
 };
+
+type CoverageInput = Pick<RequirementCoverage, 'requirement' | 'source'>;
 
 const record = (value: unknown): JsonRecord => value && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : {};
 const array = (value: unknown): unknown[] => Array.isArray(value) ? value : [];
@@ -71,8 +75,8 @@ const expandedTokens = (value: unknown) => {
   return [...own];
 };
 
-function buildCoverage(requirements: string[], evidence: Array<Omit<EvidenceMatch, 'matchedTerms' | 'score'> & { content: unknown; weight: number }>): RequirementCoverage[] {
-  return requirements.map((requirement) => {
+function buildCoverage(requirements: CoverageInput[], evidence: Array<Omit<EvidenceMatch, 'matchedTerms' | 'score'> & { content: unknown; weight: number }>): RequirementCoverage[] {
+  return requirements.map(({ requirement, source }) => {
     const requiredTerms = expandedTokens(requirement);
     const matches = evidence.map((item) => {
       const evidenceTerms = new Set(expandedTokens(item.content));
@@ -83,7 +87,7 @@ function buildCoverage(requirements: string[], evidence: Array<Omit<EvidenceMatc
     const uniqueMatched = new Set(matches.flatMap((item) => item.matchedTerms)).size;
     const ratio = requiredTerms.length ? uniqueMatched / requiredTerms.length : 0;
     const status = score >= 8 || ratio >= 0.6 ? 'matched' : score >= 3 || ratio >= 0.25 ? 'partial' : 'unsupported';
-    return { requirement, status, score, evidence: matches };
+    return { requirement, source, status, score, evidence: matches };
   });
 }
 
@@ -91,7 +95,11 @@ export function mapInputs(profileInput: unknown, vacancyInput: unknown): Mapping
   const profile = record(profileInput);
   const basics = record(profile.basics ?? profile.profile ?? profile.personal);
   const job = record(record(vacancyInput).job ?? vacancyInput);
-  const requirements = [...strings(job.requirements), ...strings(job.responsibilities), ...strings(job.nice_to_haves ?? job.niceToHaves)];
+  const requirements: CoverageInput[] = [
+    ...strings(job.requirements).map((requirement) => ({ requirement, source: 'requirement' as const })),
+    ...strings(job.responsibilities).map((requirement) => ({ requirement, source: 'responsibility' as const })),
+    ...strings(job.nice_to_haves ?? job.niceToHaves).map((requirement) => ({ requirement, source: 'nice_to_have' as const })),
+  ];
   const vacancyTerms = tokens({
     title: job.title,
     responsibilities: job.responsibilities ?? job.tasks,
@@ -186,6 +194,9 @@ export function mapInputs(profileInput: unknown, vacancyInput: unknown): Mapping
     partial: coverage.filter((item) => item.status === 'partial').length,
     unsupported: coverage.filter((item) => item.status === 'unsupported').length,
   };
+  const coveragePercent = coverage.length
+    ? Math.round(((coverageSummary.matched + coverageSummary.partial * 0.5) / coverage.length) * 100)
+    : 0;
   if (coverageSummary.unsupported) warnings.push(`${coverageSummary.unsupported} vacancy requirements have no supporting profile evidence.`);
 
   return {
@@ -203,5 +214,6 @@ export function mapInputs(profileInput: unknown, vacancyInput: unknown): Mapping
     vacancyTerms,
     coverage,
     coverageSummary,
+    coveragePercent,
   };
 }
