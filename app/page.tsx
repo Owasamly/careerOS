@@ -47,7 +47,9 @@ const steps: { id: Step; label: string; hint: string }[] = [
   { id: 'tailoring', label: 'Tailoring rules', hint: 'Output and emphasis' },
 ];
 
-function JsonInput({ label, description, value, setValue, mode, setMode, placeholder }: {
+function JsonInput({ sectionId, active, label, description, value, setValue, mode, setMode, placeholder }: {
+  sectionId: string;
+  active: boolean;
   label: string; description: string; value: string; setValue: (value: string) => void;
   mode: InputMode; setMode: (mode: InputMode) => void; placeholder: string;
 }) {
@@ -66,7 +68,7 @@ function JsonInput({ label, description, value, setValue, mode, setMode, placeho
   };
 
   return (
-    <section className="input-card">
+    <section className={`input-card ${active ? 'step-target' : ''}`} id={sectionId}>
       <div className="card-heading">
         <div><p className="eyebrow">{label}</p><p className="card-description">{description}</p></div>
         <span className={`status ${status.tone}`}>{status.label}</span>
@@ -129,6 +131,11 @@ export default function Home() {
   const invalidateReview = () => {
     setReport(null);
     setReviewApproved(false);
+  };
+
+  const navigateToStep = (step: Step) => {
+    setActiveStep(step);
+    document.getElementById(`${step}-section`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
   const extractVacancy = async () => {
@@ -198,7 +205,7 @@ export default function Home() {
           <p className="panel-label">Build your input</p>
           <nav aria-label="Tailoring steps">
             {steps.map((step, index) => (
-              <button key={step.id} className={`step ${activeStep === step.id ? 'selected' : ''}`} onClick={() => setActiveStep(step.id)}>
+              <button key={step.id} className={`step ${activeStep === step.id ? 'selected' : ''}`} onClick={() => navigateToStep(step.id)}>
                 <span className="step-number">{index + 1}</span>
                 <span><strong>{step.label}</strong><small>{step.hint}</small></span>
               </button>
@@ -222,8 +229,8 @@ export default function Home() {
           </section>
 
           <div className="input-grid">
-            <JsonInput label="Candidate profile" description="The source of truth. Keep every role, project, skill and achievement here." value={profile} setValue={(value) => { setProfile(value); invalidateReview(); }} mode={profileMode} setMode={setProfileMode} placeholder="Paste your canonical profile JSON" />
-            <JsonInput label="Job vacancy" description="Use structured fields for responsibilities, requirements and nice-to-haves." value={vacancy} setValue={(value) => { setVacancy(value); setExtraction(null); invalidateReview(); }} mode={vacancyMode} setMode={setVacancyMode} placeholder="Paste the structured vacancy JSON" />
+            <JsonInput sectionId="profile-section" active={activeStep === 'profile'} label="Candidate profile" description="The source of truth. Keep every role, project, skill and achievement here." value={profile} setValue={(value) => { setProfile(value); invalidateReview(); }} mode={profileMode} setMode={setProfileMode} placeholder="Paste your canonical profile JSON" />
+            <JsonInput sectionId="vacancy-section" active={activeStep === 'vacancy'} label="Job vacancy" description="Use structured fields for responsibilities, requirements and nice-to-haves." value={vacancy} setValue={(value) => { setVacancy(value); setExtraction(null); invalidateReview(); }} mode={vacancyMode} setMode={setVacancyMode} placeholder="Paste the structured vacancy JSON" />
           </div>
 
           {vacancySnapshot && <section className="vacancy-review-card" aria-label="Vacancy review summary">
@@ -237,7 +244,7 @@ export default function Home() {
             <p className="vacancy-review-note">Confirm these counts and edit the vacancy JSON if anything was classified incorrectly. Mapping creates a fresh evidence report from the current inputs.</p>
           </section>}
 
-          <section className="rules-card">
+          <section className={`rules-card ${activeStep === 'tailoring' ? 'step-target' : ''}`} id="tailoring-section">
             <div className="card-heading"><div><p className="eyebrow">Tailoring rules</p><p className="card-description">Control how much changes and what the output must respect.</p></div><span className="optional">Optional</span></div>
             <div className="rule-grid">
               <label>Selection strength<select value={strength} onChange={(event) => setStrength(event.target.value)}><option>Conservative</option><option>Balanced</option><option>Strong</option></select></label>
