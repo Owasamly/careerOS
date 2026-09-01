@@ -17,6 +17,19 @@ API is connected.
 - Define which resume sections may be rewritten, ranked, selected, or preserved.
 - Review the tailoring brief before any data is sent.
 - Use Reactive Resume as the intended PDF renderer.
+- Match vacancy requirements to tagged candidate evidence without inventing claims.
+- Review matched, partial, and unsupported requirements before PDF generation.
+- Show a structured vacancy summary and invalidate stale mapping reports whenever
+  either JSON input changes.
+- Require explicit approval of the vacancy and evidence report before PDF
+  generation is enabled.
+
+## Candidate source of truth
+
+The canonical master-profile contract is in `schemas/candidate-profile.schema.json`.
+Use stable IDs and tags on skills, projects, and experience bullets so every
+tailoring decision can be traced back to factual candidate evidence. A complete
+starter document is available at `schemas/candidate-profile.example.json`.
 
 ## Planned phases
 
@@ -37,3 +50,28 @@ API is connected.
 pnpm install
 pnpm dev
 ```
+
+## Verification
+
+Run the deterministic matcher regression tests:
+
+```bash
+pnpm test:matcher
+```
+
+Check the frontend and production bundle:
+
+```bash
+pnpm lint
+pnpm build
+```
+
+Run the vacancy-extractor tests from `services/vacancy_extractor`:
+
+```powershell
+.venv\Scripts\python.exe -m pytest -q
+```
+
+The matcher suite verifies evidence traceability, matched/partial/unsupported
+coverage, relevance ordering, and the rule that unsupported vacancy claims are
+never inserted into the generated CV.

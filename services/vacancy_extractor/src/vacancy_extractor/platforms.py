@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from html import escape
+from html import escape, unescape
 import re
 from typing import Any
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import parse_qs, urlparse, urlunparse
+from xml.etree import ElementTree
+
+from bs4 import BeautifulSoup
 
 
 @dataclass(frozen=True)
@@ -24,7 +27,12 @@ def plan_fetch(url: str) -> FetchPlan:
     if ".jobs.personio." in host:
         # Personio's /apply page contains the form, not the vacancy description.
         path = re.sub(r"(/job/[^/]+)/apply/?$", r"\1", parsed.path, flags=re.I)
-        return FetchPlan("personio", urlunparse(parsed._replace(path=path)), account=host.split(".jobs.personio.", 1)[0])
+        account = host.split(".jobs.personio.", 1)[0]
+        job_match = re.search(r"/job/(\d+)", path, re.I)
+        if account == "crozdach" and job_match:
+            language = (parse_qs(parsed.query).get("language") or ["de"])[0]
+            return FetchPlan("personio", f"{parsed.scheme}://{host}/xml?language={language}", "personio_xml", job_match.group(1), account)
+        return FetchPlan("personio", urlunparse(parsed._replace(path=path)), account=account)
 
     if host in {"jobs.lever.co", "jobs.eu.lever.co"} and len(parts) >= 2:
         region = "api.eu.lever.co" if host == "jobs.eu.lever.co" else "api.lever.co"
@@ -34,7 +42,12 @@ def plan_fetch(url: str) -> FetchPlan:
         job_id = parts[1] if parts[1] != "apply" else (parts[2] if len(parts) > 2 else "")
         return FetchPlan("ashby", f"https://api.ashbyhq.com/posting-api/job-board/{parts[0]}", "ashby_json", job_id, parts[0])
 
-    greenhouse_hosts = {"boards.greenhouse.io", "job-boards.greenhouse.io"}
+    if host == "careers.celonis.com" and parsed.path.rstrip("/").endswith("/job-detail"):
+        job_id = (parse_qs(parsed.query).get("jobId") or [""])[0]
+        if job_id.isdigit():
+            return FetchPlan("celonis", f"https://dxp-api.celonis.com/v1/jobs/{job_id}", "celonis_json", job_id, "Celonis")
+
+    greenhouse_hosts = {"boards.greenhouse.io", "job-boards.greenhouse.io", "job-boards.eu.greenhouse.io"}
     if host in greenhouse_hosts and "jobs" in parts:
         index = parts.index("jobs")
         if index > 0 and len(parts) > index + 1:
@@ -46,6 +59,29 @@ def plan_fetch(url: str) -> FetchPlan:
 
 def _section(title: str, content: str) -> str:
     return f"<h2>{escape(title)}</h2>{content}" if content else ""
+
+
+def normalize_rich_sections(content: str) -> str:
+    soup = BeautifulSoup(unescape(content), "html.parser")
+    for paragraph in soup.find_all("p"):
+        strong = paragraph.find("strong", recursive=False)
+        paragraph_text = " ".join(paragraph.get_text(" ", strip=True).split())
+        strong_text = " ".join(strong.get_text(" ", strip=True).split()) if strong else ""
+        is_strong_label = bool(strong_text) and paragraph_text.rstrip(":") == strong_text.rstrip(":")
+        # Ashby descriptions sometimes render section labels as an unstyled,
+        # standalone paragraph (for example, simply "Tasks") rather than a
+        # semantic heading or bold label.
+        is_plain_section_label = bool(re.fullmatch(
+            r"(?:key\s+)?(?:responsibilities(?:\s*/\s*tasks)?|tasks|duties|qualifications(?:\s*&\s*background)?|requirements|your\s+profile|nice\s+to\s+have)",
+            paragraph_text.rstrip(":").strip(),
+            re.I,
+        ))
+        if not is_strong_label and not is_plain_section_label:
+            continue
+        heading = soup.new_tag("h2")
+        heading.string = paragraph_text.rstrip(":")
+        paragraph.replace_with(heading)
+    return str(soup)
 
 
 def lever_to_html(data: dict[str, Any], account: str) -> str:
@@ -76,21 +112,79 @@ def ashby_to_html(data: dict[str, Any], account: str, job_id: str) -> str:
         "</head><body><main>"
         f"<h1>{escape(str(job.get('title', '')))}</h1>"
         f'<div class="job-location">{escape(locations)}</div>'
-        f"{job.get('descriptionHtml', '')}"
+        f"{normalize_rich_sections(str(job.get('descriptionHtml', '')))}"
+        "</main></body></html>"
+    )
+
+
+def celonis_to_html(data: dict[str, Any]) -> str:
+    return (
+        "<html><head><meta name=\"application-name\" content=\"Celonis\"></head><body><main>"
+        f"<h1>{escape(str(data.get('title', '')))}</h1>"
+        f'<div class="job-location">{escape(str(data.get("groupedLocation", "")))}</div>'
+        f"{normalize_rich_sections(str(data.get('description', '')))}"
+        "</main></body></html>"
+    )
+
+
+def personio_xml_to_html(content: str, plan: FetchPlan) -> str:
+    root = ElementTree.fromstring(content)
+    position = next((item for item in root.findall("position") if (item.findtext("id") or "") == plan.job_id), None)
+    if position is None:
+        raise ValueError("The vacancy was not found in the public Personio XML feed.")
+    descriptions = position.findall("./jobDescriptions/jobDescription")
+    rich_description = "".join((item.findtext("value") or "") for item in descriptions)
+    soup = BeautifulSoup(rich_description, "html.parser")
+    for line_break in soup.find_all("br"):
+        line_break.replace_with("\n")
+    lines = [" ".join(line.split()) for line in soup.get_text(" ", strip=False).splitlines() if line.strip()]
+
+    def answer_after(pattern: str) -> str:
+        for index, line in enumerate(lines[:-1]):
+            if re.search(pattern, line, re.I):
+                return lines[index + 1]
+        return ""
+
+    def dialogue_items(answer: str) -> list[str]:
+        answer = re.sub(r"^[^:]{1,40}:\s*", "", answer).strip(" „“\"'")
+        sentences = [item.strip(" „“\"'") for item in re.split(r"(?<=[.!?])\s+(?=[A-ZÄÖÜ])", answer)]
+        filler = (
+            r"^bei verschiedenen dingen[.!?]*$",
+            r"^das (?:wäre|waere) .* (?:interessant|spannend)[.!?]*$",
+        )
+        return [item for item in sentences if item and not any(re.search(pattern, item, re.I) for pattern in filler)]
+
+    def item_list(items: list[str]) -> str:
+        return "<ul>" + "".join(f"<li>{escape(item)}</li>" for item in items) + "</ul>" if items else ""
+
+    responsibilities = dialogue_items(answer_after(r"(?:welchen|welche|bei welchen).*aufgaben|aufgaben.*(?:hilfe|unterstützung)"))
+    requirements = dialogue_items(answer_after(r"fähigkeiten|sprachkenntnisse|vorkenntnisse|voraussetzungen|anforderungen"))
+    known_companies = {"crozdach": "CROZ DACH GmbH"}
+    company = position.findtext("subcompany") or known_companies.get(plan.account) or plan.account.replace("-", " ").title()
+    offices = [position.findtext("office") or "", *[item.text or "" for item in position.findall("./additionalOffices/office")]]
+    return (
+        "<html><head><meta charset=\"utf-8\">"
+        f'<meta name="application-name" content="{escape(company)}">'
+        "</head><body><main>"
+        f"<h1>{escape(position.findtext('name') or '')}</h1>"
+        f'<div class="job-location">{escape(" / ".join(filter(None, offices)))}</div>'
+        f"<div>{rich_description}</div>"
+        f"{_section('Responsibilities', item_list(responsibilities))}"
+        f"{_section('Requirements', item_list(requirements))}"
         "</main></body></html>"
     )
 
 
 def greenhouse_to_html(data: dict[str, Any], account: str) -> str:
     location = (data.get("location") or {}).get("name", "")
-    company = account.replace("-", " ").title()
+    company = str(data.get("company_name") or account.replace("-", " ").title())
     return (
         "<html><head>"
         f'<meta name="application-name" content="{escape(company)}">'
         "</head><body><main>"
         f"<h1>{escape(str(data.get('title', '')))}</h1>"
         f'<div class="job-location">{escape(str(location))}</div>'
-        f"{data.get('content', '')}"
+        f"{normalize_rich_sections(str(data.get('content', '')))}"
         "</main></body></html>"
     )
 
@@ -102,4 +196,6 @@ def api_payload_to_html(plan: FetchPlan, data: dict[str, Any]) -> str:
         return ashby_to_html(data, plan.account, plan.job_id)
     if plan.kind == "greenhouse_json":
         return greenhouse_to_html(data, plan.account)
+    if plan.kind == "celonis_json":
+        return celonis_to_html(data)
     raise ValueError(f"Unsupported ATS payload type: {plan.kind}")

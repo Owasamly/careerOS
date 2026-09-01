@@ -1,0 +1,46 @@
+{
+  "basics": {
+    "name": "Example Candidate",
+    "headline": "Cloud Security and Automation Engineer",
+    "email": "candidate@example.com",
+    "location": "Munich, Germany"
+  },
+  "summary": "Security-focused engineer with cloud monitoring and workflow automation experience.",
+  "experience": [
+    {
+      "id": "experience-security-intern",
+      "company": "Example GmbH",
+      "position": "Security Intern",
+      "date": "2025–2026",
+      "bullets": [
+        {
+          "id": "experience-security-intern-alerts",
+          "text": "Investigated cloud security alerts and documented incident-response findings.",
+          "tags": ["cloud-security", "monitoring", "incident-response"]
+        }
+      ]
+    }
+  ],
+  "education": [],
+  "skills": [
+    {
+      "id": "skill-cloud-security",
+      "name": "Cloud Security",
+      "keywords": ["AWS", "IAM", "CloudTrail", "GuardDuty"],
+      "tags": ["aws", "cloud-security", "monitoring"]
+    }
+  ],
+  "projects": [
+    {
+      "id": "project-security-automation",
+      "name": "Security Automation Lab",
+      "description": "Automated security checks and reporting with Python.",
+      "keywords": ["Python", "Automation"],
+      "tags": ["python", "automation", "security"]
+    }
+  ],
+  "languages": [
+    { "language": "English", "level": "C1" },
+    { "language": "German", "level": "B2" }
+  ]
+}

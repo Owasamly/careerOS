@@ -2,15 +2,22 @@ from __future__ import annotations
 
 import httpx
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pathlib import Path
 
 from .extractor import extract_vacancy
 from .models import ExtractRequest, VacancyDocument
-from .platforms import api_payload_to_html, plan_fetch
+from .platforms import api_payload_to_html, personio_xml_to_html, plan_fetch
 from .safety import UnsafeUrlError, validate_public_url
 
 app = FastAPI(title="Adapt My CV Vacancy Extractor", version="0.1.0")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_methods=["POST", "GET"],
+    allow_headers=["Content-Type"],
+)
 UI_PATH = Path(__file__).with_name("static") / "index.html"
 
 
@@ -43,6 +50,8 @@ async def fetch_html(url: str) -> tuple[str, str]:
                 raise HTTPException(status_code=413, detail="The vacancy response exceeds 3 MB.")
             if plan.kind != "html":
                 try:
+                    if plan.kind == "personio_xml":
+                        return personio_xml_to_html(response.content.decode("utf-8"), plan), original_url
                     return api_payload_to_html(plan, response.json()), original_url
                 except (ValueError, TypeError) as exc:
                     raise HTTPException(status_code=422, detail=str(exc)) from exc

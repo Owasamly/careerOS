@@ -9,7 +9,8 @@
     "dev": "vinext dev",
     "build": "vinext build",
     "start": "vinext start",
-    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next"
+    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
+    "test:matcher": "node --experimental-strip-types --test app/resume-engine.test.ts"
   },
   "dependencies": {
     "@react-pdf/renderer": "4.8.1",
